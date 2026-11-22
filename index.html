@@ -87,6 +87,7 @@
   .pin span { transform: rotate(45deg); font-size: 15px; }
   .pin.open { background: var(--open); } .pin.soon { background: var(--soon); } .pin.closed { background: var(--closed); }
   .empty { padding: 24px 16px; color: var(--muted); font-size: 14px; }
+  footer a { color: inherit; }
   footer { font-size: 12px; color: var(--muted); padding: 8px 16px; border-top: 1px solid var(--line); background: var(--panel); }
   #toast {
     position: fixed; left: 50%; bottom: 48px; transform: translateX(-50%); z-index: 1000;
@@ -179,7 +180,7 @@
   <div id="map"></div>
   <section id="list"></section>
 </main>
-<footer>아는 노점이 있으면 ＋ 가게 등록으로 알려 주세요. 영업 여부는 사장님·손님이 알려 준 상태를 우선으로 보여주고, 없으면 등록된 영업시간으로 추정해요. 사장님이시면 가게를 눌러 "이 가게 사장님이세요?"로 신청해 주세요.</footer>
+<footer>가게 정보: 손님 등록 + 구청 허가 거리가게 공개자료(<a href="https://www.data.go.kr" target="_blank" rel="noopener">공공데이터포털</a>). 아는 노점이 있으면 ＋ 가게 등록으로 알려 주세요. 영업 여부는 사장님·손님이 알려 준 상태를 우선으로 보여주고, 없으면 등록된 영업시간으로 추정해요. 사장님이시면 가게를 눌러 "이 가게 사장님이세요?"로 신청해 주세요.</footer>
 <div id="toast"></div>
 
 <div id="owner" hidden role="dialog" aria-modal="true" aria-labelledby="ownerTitle">
@@ -245,8 +246,21 @@ const EMOJI = Object.fromEntries(CATS.map(c => [c.key, c.e]));
 
 // hours: 요일별 [시작, 끝] (0=일 ... 6=토), null = 휴무. 끝이 시작보다 작으면 자정을 넘김.
 let userStalls = [];               // 손님이 등록한 가게 (서버 또는 이 브라우저)
+let publicStalls = [];             // 구청 공개 데이터 (data/public-stalls.json)
+let PUBLIC_SOURCES = {};
 let STALLS = [];
-function rebuildStalls() { STALLS = [...userStalls]; }
+function rebuildStalls() { STALLS = [...userStalls, ...publicStalls]; }
+async function loadPublic() {
+  try {
+    const j = await fetch("data/public-stalls.json", { cache: "no-cache" }).then(r => r.json());
+    PUBLIC_SOURCES = j.sources || {};
+    publicStalls = (j.stalls || []).map(s => ({
+      ...s, public: true,
+      hours: typeof s.hours === "string" ? [0,1,2,3,4,5,6].map(() => s.hours.split("-")) : s.hours,
+    }));
+    rebuildStalls();
+  } catch (e) { console.warn("공개 데이터 불러오기 실패", e); }
+}
 const DAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
 // ---- 시간 계산: 보는 사람의 시간대와 관계없이 한국 시간 기준 ----
@@ -385,7 +399,7 @@ function status(stall, now) {
   }
   return {
     ...sched, sched,
-    report: latest ? `마지막 제보 ${ago(latest.at)} (${latest.open ? "열림" : "닫힘"}) · 영업시간 기준 추정` : "아직 제보 없음 · 영업시간 기준 추정",
+    report: (latest ? `마지막 제보 ${ago(latest.at)} (${latest.open ? "열림" : "닫힘"})` : "아직 제보 없음") + (stall.hours ? " · 영업시간 기준 추정" : " · 영업 여부를 알려 주세요"),
     fresh: false,
   };
 }
@@ -413,11 +427,20 @@ function distKm(a, b) {
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 
 function hoursTable(stall, now) {
-  if (!stall.hours) return `<div class="hours">영업시간이 아직 등록되지 않았어요. 가게 앞이라면 아래에서 영업 여부를 알려 주세요.</div>`;
+  if (!stall.hours) return `<div class="hours">영업시간 정보가 없어요. 가게 앞이라면 아래에서 영업 여부를 알려 주세요.</div>`;
   return `<table class="hours">` + [1,2,3,4,5,6,0].map(d => {
     const h = stall.hours[d];
     return `<tr class="${d === now.day ? "today" : ""}"><td>${DAYS[d]}</td><td>${h ? h[0] + " – " + h[1] : "휴무"}</td></tr>`;
   }).join("") + "</table>";
+}
+function publicInfo(s) {
+  const src = PUBLIC_SOURCES[s.srcId] || {};
+  const old = +s.srcDate.slice(0, 4) < 2024;
+  return `<div class="meta" style="margin-bottom:6px">
+    📍 ${esc(s.address)}${s.approx ? " · 지도 위치는 근처 역·건물 기준 대략적 위치예요" : ""}<br>
+    📋 출처: <a href="${esc(src.url || "#")}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(src.title || "공공데이터포털")}</a> (${esc(s.srcDate)} 기준)
+    ${old ? `<br>⚠️ ${s.srcDate.slice(0, 4)}년 자료라 지금은 없을 수도 있어요. 가 보셨다면 제보 부탁해요.` : ""}
+  </div>`;
 }
 function reportBox(stall, st) {
   const recent = reportsFor(stall.id).slice(0, 4);
@@ -448,7 +471,7 @@ function render() {
   rows = rows.filter(({ s, st }) =>
     (filterType === "all" || s.types.includes(filterType)) &&
     (!openOnly || st.state !== "closed") &&
-    (!query || (s.name + s.area + s.menu + s.types.join("")).includes(query)));
+    (!query || (s.name + s.area + s.menu + (s.address || "") + s.types.join("")).includes(query)));
   const rank = { open: 0, soon: 1, closed: 2 };
   rows.sort((a, b) => userPos ? a.d - b.d
     : rank[a.st.state] - rank[b.st.state] || (b.st.fresh - a.st.fresh) || a.s.name.localeCompare(b.s.name, "ko"));
@@ -470,8 +493,8 @@ function render() {
         <div class="top"><h3>${esc(s.name)}</h3><span class="badge ${st.state}">${st.text}</span></div>
         <div class="reportline ${st.fresh ? "" : "stale"}">${esc(st.report)}</div>
         <div class="meta">${esc(s.area)}${d != null ? ` · ${d < 1 ? Math.round(d * 1000) + "m" : d.toFixed(1) + "km"}` : ""}${s.menu ? `<br>${esc(s.menu)}` : ""}</div>
-        <div class="tags">${s.createdAt && Date.now() - s.createdAt < 7 * 86400000 ? `<span class="tag new">새로 등록</span>` : ""}${s.types.map(t => `<span class="tag">${EMOJI[t] || ""} ${esc(t)}</span>`).join("")}${s.pay ? `<span class="tag">${esc(s.pay)}</span>` : ""}</div>
-        <div class="detail">${hoursTable(s, now)}${reportBox(s, st)}${REMOTE ? ownerLink(s) : ""}</div>
+        <div class="tags">${s.public ? `<span class="tag" title="구청 허가 거리가게 자료">📋 구청 자료 ${s.srcDate.slice(0, 7).replace("-", ".")}</span>` : ""}${s.createdAt && Date.now() - s.createdAt < 7 * 86400000 ? `<span class="tag new">새로 등록</span>` : ""}${s.types.map(t => `<span class="tag">${EMOJI[t] || ""} ${esc(t)}</span>`).join("")}${s.pay ? `<span class="tag">${esc(s.pay)}</span>` : ""}</div>
+        <div class="detail">${s.public ? publicInfo(s) : ""}${hoursTable(s, now)}${reportBox(s, st)}${REMOTE && !s.public ? ownerLink(s) : ""}</div>
       </div>`).join("")
     : `<div class="empty">조건에 맞는 가게가 없어요.</div>`);
   list.querySelectorAll(".card").forEach(el => el.addEventListener("click", () => select(+el.dataset.id, true)));
@@ -778,6 +801,7 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("owner"
 const lastSent = {};
 renderCats();
 render();
+loadPublic().then(render);
 Promise.all([fetchRemote(), loadClaims()]).then(render);
 setInterval(async () => { await fetchRemote(); render(); }, 60 * 1000);
 </script>
