@@ -111,7 +111,7 @@
   <div id="map"></div>
   <section id="list"></section>
 </main>
-<footer>샘플 데이터입니다(실제 가게 아님). 영업 여부는 손님 제보를 우선으로 보여주고, 최근 제보가 없으면 등록된 영업시간으로 추정해요.</footer>
+<footer>가게 정보는 아직 샘플입니다(실제 가게 아님). 영업 여부는 손님 제보를 우선으로 보여주고, 최근 제보가 없으면 등록된 영업시간으로 추정해요.</footer>
 <div id="toast"></div>
 
 <script>
@@ -243,17 +243,23 @@ function closingText(left, closeAt) {
 // ---- 손님 제보 ----
 // SUPABASE_URL과 SUPABASE_ANON_KEY를 채우면 제보가 서버에 저장되어 모든 방문자와 공유돼요.
 // 비워 두면 지금처럼 이 브라우저에만 저장(localStorage)하고, 데모용 샘플 제보를 보여줘요.
-const SUPABASE_URL = "";       // 예: "https://abcd1234.supabase.co"
-const SUPABASE_ANON_KEY = "";  // Supabase 프로젝트의 anon public 키 (공개돼도 되는 키)
+const SUPABASE_URL = "https://qzisdwtstsicpjqvynyf.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_cJEqZcwTtoUDYUz4w-HUFg_Xb0YGxEM";  // publishable 키 (공개돼도 되는 키)
 const REMOTE = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 let remoteReports = {};  // { stallId: [{open, at}] }
 
+// 예전 anon 키(eyJ...)는 Bearer로도 보내고, 새 publishable 키(sb_publishable_...)는 apikey 헤더만 써요.
+function authHeaders() {
+  const h = { apikey: SUPABASE_ANON_KEY };
+  if (SUPABASE_ANON_KEY.startsWith("eyJ")) h.Authorization = `Bearer ${SUPABASE_ANON_KEY}`;
+  return h;
+}
 async function fetchRemote() {
   if (!REMOTE) return;
   const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/reports?select=stall_id,is_open,created_at&created_at=gte.${since}&order=created_at.desc&limit=2000`,
-      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } });
+      { headers: authHeaders() });
     if (!r.ok) throw new Error(r.status);
     const next = {};
     for (const row of await r.json()) (next[row.stall_id] = next[row.stall_id] || []).push({ open: row.is_open, at: Date.parse(row.created_at) });
@@ -263,7 +269,7 @@ async function fetchRemote() {
 async function sendRemote(stallId, open) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/reports`, {
     method: "POST",
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    headers: { ...authHeaders(),
                "Content-Type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify({ stall_id: stallId, is_open: open }),
   });
