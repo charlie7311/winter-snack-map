@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>겨울 간식 지도</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --bg: #fbf7f1; --panel: #ffffff; --text: #2b2118; --muted: #7a6a5b;
+    --line: #eadfce; --accent: #c8741f; --open: #1f8a4c; --closed: #a3988c;
+    --soon: #c98a00; --chip: #f3e9db; --report: #2a6df4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1b1612; --panel: #241d17; --text: #f2e8dc; --muted: #b0a08e;
+      --line: #3a2f25; --accent: #e8954a; --open: #4cc584; --closed: #7d7166;
+      --soon: #e3b23c; --chip: #33291f; --report: #7ea6ff;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1b1612; --panel: #241d17; --text: #f2e8dc; --muted: #b0a08e;
+    --line: #3a2f25; --accent: #e8954a; --open: #4cc584; --closed: #7d7166;
+    --soon: #e3b23c; --chip: #33291f; --report: #7ea6ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+  .cats { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; align-items: center; }
+  .chip {
+    border: 1px solid var(--line); background: var(--chip); color: var(--text);
+    border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; white-space: nowrap; flex: none;
+  }
+  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  input[type=search] {
+    flex: 1 1 160px; min-width: 0; padding: 7px 12px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 14px;
+  }
+  main { flex: 1; display: flex; min-height: 0; }
+  #map { flex: 1.4; min-height: 300px; }
+  #list { flex: 1; overflow-y: auto; border-left: 1px solid var(--line); background: var(--panel); }
+  @media (max-width: 760px) {
+    main { flex-direction: column; }
+    #map { flex: none; height: 42vh; }
+    #list { border-left: none; border-top: 1px solid var(--line); }
+  }
+  .summary { padding: 10px 16px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--line); }
+  .card { padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .card:hover, .card.active { background: var(--chip); }
+  .card .top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .card h3 { margin: 0; font-size: 16px; }
+  .badge { font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .badge.open { color: var(--open); } .badge.closed { color: var(--closed); } .badge.soon { color: var(--soon); }
+  .reportline { font-size: 12px; margin-top: 4px; color: var(--report); }
+  .reportline.stale { color: var(--muted); }
+  .meta { font-size: 13px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+  .tags { margin-top: 6px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .tag { font-size: 12px; background: var(--chip); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
+  .detail { display: none; margin-top: 8px; }
+  .card.active .detail { display: block; }
+  .hours { font-size: 12px; color: var(--muted); }
+  .hours td { padding: 1px 8px 1px 0; }
+  .hours tr.today td { color: var(--text); font-weight: 600; }
+  .report-box { margin-top: 10px; padding: 10px; border: 1px dashed var(--line); border-radius: 10px; background: var(--panel); }
+  .report-box .q { font-size: 13px; margin-bottom: 6px; }
+  .report-box button {
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font-size: 13px; cursor: pointer;
+    background: var(--bg); color: var(--text); margin-right: 6px;
+  }
+  .report-box button.yes { border-color: var(--open); color: var(--open); }
+  .report-box button.no { border-color: var(--closed); color: var(--muted); }
+  .report-box ul { margin: 8px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
+  .pin {
+    width: 30px; height: 30px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+    display: flex; align-items: center; justify-content: center; border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,.35);
+  }
+  .pin span { transform: rotate(45deg); font-size: 15px; }
+  .pin.open { background: var(--open); } .pin.soon { background: var(--soon); } .pin.closed { background: var(--closed); }
+  .empty { padding: 24px 16px; color: var(--muted); font-size: 14px; }
+  footer { font-size: 12px; color: var(--muted); padding: 8px 16px; border-top: 1px solid var(--line); background: var(--panel); }
+  #toast {
+    position: fixed; left: 50%; bottom: 48px; transform: translateX(-50%); z-index: 1000;
+    background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 999px; font-size: 13px;
+    opacity: 0; transition: opacity .2s; pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🍠 겨울 간식 지도</h1>
+  <p>붕어빵부터 군고구마까지, 지금 열린 겨울 간식 노점을 찾아보세요. <span id="now"></span></p>
+  <div class="cats" id="cats"></div>
+  <div class="controls">
+    <button class="chip" id="openOnly" aria-pressed="false">지금 영업중만</button>
+    <button class="chip" id="locate" aria-pressed="false">📍 내 주변</button>
+    <input type="search" id="q" placeholder="가게·동네·메뉴 검색">
+  </div>
+</header>
+<main>
+  <div id="map"></div>
+  <section id="list"></section>
+</main>
+<footer>샘플 데이터입니다(실제 가게 아님). 영업 여부는 손님 제보를 우선으로 보여주고, 최근 제보가 없으면 등록된 영업시간으로 추정해요.</footer>
+<div id="toast"></div>
+
+<script>
+// ---- 카테고리 ----
+const CATS = [
+  { key: "붕어빵", e: "🐟" }, { key: "호떡", e: "🥞" }, { key: "군고구마", e: "🍠" },
+  { key: "군밤", e: "🌰" }, { key: "계란빵", e: "🥚" }, { key: "국화빵", e: "🌼" },
+  { key: "어묵", e: "🍢" }, { key: "타코야끼", e: "🐙" }, { key: "델리만쥬", e: "🧁" },
+  { key: "땅콩과자", e: "🥜" }, { key: "와플", e: "🧇" }, { key: "옥수수", e: "🌽" },
+];
+const EMOJI = Object.fromEntries(CATS.map(c => [c.key, c.e]));
+
+// ---- 샘플 데이터 (가상) ----
+// hours: 요일별 [시작, 끝] (0=일 ... 6=토), null = 휴무. 끝이 시작보다 작으면 자정을 넘김.
+const W = (o, c) => [o, c];
+const daily = (o, c, off = []) => [0,1,2,3,4,5,6].map(d => off.includes(d) ? null : W(o, c));
+const STALLS = [
+  { id: 1, name: "신촌역 3번출구 붕어빵", area: "서대문구 신촌", lat: 37.5553, lng: 126.9368,
+    types: ["붕어빵"], menu: "팥·슈크림 붕어빵 3개 2,000원", pay: "현금·계좌이체",
+    hours: [null, W("15:00","21:00"), W("15:00","21:00"), W("15:00","21:00"), W("15:00","21:00"), W("15:00","22:00"), W("13:00","22:00")] },
+  { id: 2, name: "이대 앞 꿀호떡", area: "서대문구 대현동", lat: 37.5579, lng: 126.9460,
+    types: ["호떡"], menu: "씨앗호떡 2,000원 · 꿀호떡 1,500원", pay: "현금·카드",
+    hours: daily("12:00", "20:00", [1]) },
+  { id: 3, name: "홍대 놀이터 옆 잉어빵·타코야끼", area: "마포구 서교동", lat: 37.5509, lng: 126.9220,
+    types: ["붕어빵", "타코야끼"], menu: "잉어빵 4개 3,000원 · 타코야끼 8알 5,000원", pay: "현금·계좌이체",
+    hours: [W("14:00","23:00"), W("16:00","23:00"), W("16:00","23:00"), W("16:00","23:00"), W("16:00","23:00"), W("16:00","01:00"), W("14:00","01:00")] },
+  { id: 4, name: "망원시장 입구 간식 포차", area: "마포구 망원동", lat: 37.5560, lng: 126.9056,
+    types: ["붕어빵", "호떡", "어묵"], menu: "붕어빵 3개 2,000원 · 호떡 1,500원 · 어묵 1,000원", pay: "현금",
+    hours: daily("11:00", "19:00", [2]) },
+  { id: 5, name: "광화문 골목 붕어빵", area: "종로구 신문로", lat: 37.5705, lng: 126.9745,
+    types: ["붕어빵"], menu: "팥붕 3개 2,000원", pay: "현금·카드",
+    hours: daily("11:30", "19:00", [0, 6]) },
+  { id: 6, name: "종각 젊음의거리 호떡·어묵", area: "종로구 관철동", lat: 37.5690, lng: 126.9850,
+    types: ["호떡", "어묵"], menu: "찹쌀호떡 2,000원 · 어묵 2개 2,000원", pay: "현금·카드",
+    hours: [W("15:00","22:00"), W("15:00","22:00"), W("15:00","22:00"), W("15:00","22:00"), W("15:00","22:00"), W("15:00","23:30"), W("15:00","23:30")] },
+  { id: 7, name: "건대입구 미니붕어빵", area: "광진구 화양동", lat: 37.5404, lng: 127.0700,
+    types: ["붕어빵"], menu: "미니붕어빵 10개 3,000원", pay: "현금·계좌이체",
+    hours: [W("14:00","22:00"), W("16:00","22:00"), W("16:00","22:00"), W("16:00","22:00"), W("16:00","22:00"), W("16:00","23:00"), W("14:00","23:00")] },
+  { id: 8, name: "강남역 11번출구 호떡", area: "강남구 역삼동", lat: 37.4985, lng: 127.0282,
+    types: ["호떡"], menu: "씨앗호떡 2,500원", pay: "카드·현금",
+    hours: [null, W("17:00","23:00"), W("17:00","23:00"), W("17:00","23:00"), W("17:00","23:00"), W("17:00","00:30"), W("15:00","00:30")] },
+  { id: 9, name: "잠실새내 붕어빵 아저씨", area: "송파구 잠실동", lat: 37.5115, lng: 127.0860,
+    types: ["붕어빵", "호떡"], menu: "붕어빵 2개 1,000원 · 호떡 1,500원", pay: "현금",
+    hours: daily("15:00", "21:00") },
+  { id: 10, name: "노량진 학원가 붕어빵", area: "동작구 노량진동", lat: 37.5133, lng: 126.9426,
+    types: ["붕어빵", "계란빵"], menu: "팥·슈크림 3개 2,000원 · 계란빵 1,500원", pay: "현금·계좌이체",
+    hours: daily("07:30", "10:00", [0, 6]) },
+  { id: 11, name: "혜화역 군고구마 드럼통", area: "종로구 명륜동", lat: 37.5822, lng: 127.0019,
+    types: ["군고구마", "군밤"], menu: "군고구마 3개 5,000원 · 군밤 한 봉 5,000원", pay: "현금·계좌이체",
+    hours: daily("16:00", "22:00", [1]) },
+  { id: 12, name: "명동 입구 군밤", area: "중구 명동", lat: 37.5636, lng: 126.9827,
+    types: ["군밤", "옥수수"], menu: "군밤 한 봉 5,000원 · 찰옥수수 3,000원", pay: "현금·카드",
+    hours: daily("12:00", "21:00") },
+  { id: 13, name: "서울역 계란빵", area: "용산구 동자동", lat: 37.5547, lng: 126.9707,
+    types: ["계란빵"], menu: "계란빵 2,000원", pay: "현금",
+    hours: daily("07:00", "13:00", [0]) },
+  { id: 14, name: "남대문시장 국화빵", area: "중구 남창동", lat: 37.5592, lng: 126.9774,
+    types: ["국화빵", "땅콩과자"], menu: "국화빵 10개 3,000원 · 땅콩과자 한 봉 3,000원", pay: "현금",
+    hours: daily("10:00", "18:00", [0]) },
+  { id: 15, name: "영등포역 델리만쥬", area: "영등포구 영등포동", lat: 37.5157, lng: 126.9075,
+    types: ["델리만쥬"], menu: "델리만쥬 15개 3,000원", pay: "현금·카드",
+    hours: daily("10:00", "22:00") },
+  { id: 16, name: "합정역 어묵·떡꼬치", area: "마포구 합정동", lat: 37.5497, lng: 126.9139,
+    types: ["어묵"], menu: "어묵 1,000원 · 국물 무료", pay: "현금·카드",
+    hours: [W("17:00","02:00"), null, W("17:00","02:00"), W("17:00","02:00"), W("17:00","02:00"), W("17:00","03:00"), W("17:00","03:00")] },
+  { id: 17, name: "성수동 크로플 와플", area: "성동구 성수동", lat: 37.5443, lng: 127.0557,
+    types: ["와플"], menu: "생크림 와플 3,000원 · 사과잼 와플 3,000원", pay: "카드·현금",
+    hours: daily("13:00", "21:00", [1]) },
+  { id: 18, name: "신림 순대타운 옆 타코야끼", area: "관악구 신림동", lat: 37.4842, lng: 126.9297,
+    types: ["타코야끼"], menu: "타코야끼 6알 4,000원", pay: "현금·계좌이체",
+    hours: daily("16:00", "23:00", [2]) },
+  { id: 19, name: "청량리 옥수수·군고구마", area: "동대문구 전농동", lat: 37.5803, lng: 127.0470,
+    types: ["옥수수", "군고구마"], menu: "찐옥수수 2개 4,000원 · 군고구마 3,000원", pay: "현금",
+    hours: daily("11:00", "20:00") },
+  { id: 20, name: "고속터미널 땅콩빵·호두과자", area: "서초구 반포동", lat: 37.5049, lng: 127.0050,
+    types: ["땅콩과자"], menu: "땅콩빵 한 봉 3,000원", pay: "현금·카드",
+    hours: daily("08:00", "21:00") },
+  { id: 21, name: "목동 학원가 국화빵·와플", area: "양천구 목동", lat: 37.5268, lng: 126.8750,
+    types: ["국화빵", "와플"], menu: "국화빵 8개 2,000원 · 와플 2,500원", pay: "현금·계좌이체",
+    hours: daily("14:00", "22:00", [0]) },
+  { id: 22, name: "수유역 계란빵·델리만쥬", area: "강북구 수유동", lat: 37.6380, lng: 127.0255,
+    types: ["계란빵", "델리만쥬"], menu: "계란빵 2,000원 · 델리만쥬 10개 2,000원", pay: "현금",
+    hours: daily("09:00", "20:00") },
+];
+const DAYS = ["일", "월", "화", "수", "목", "금", "토"];
+
+// ---- 시간 계산: 보는 사람의 시간대와 관계없이 한국 시간 기준 ----
+function kstNow() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+  }).formatToParts(new Date());
+  const get = t => parts.find(p => p.type === t).value;
+  const day = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].indexOf(get("weekday"));
+  return { day, min: (+get("hour")) * 60 + (+get("minute")) };
+}
+const toMin = s => { const [h, m] = s.split(":").map(Number); return h * 60 + m; };
+
+// 영업시간 기준 추정. 반환: {state: "open"|"soon"|"closed", text}
+function scheduleStatus(stall, now) {
+  const today = stall.hours[now.day];
+  const yday = stall.hours[(now.day + 6) % 7];
+  if (yday) {
+    const o = toMin(yday[0]), c = toMin(yday[1]);
+    if (c < o && now.min < c) return closingText(c - now.min, yday[1]);
+  }
+  if (today) {
+    const o = toMin(today[0]), c = toMin(today[1]);
+    const overnight = c < o;
+    if (now.min >= o && (overnight || now.min < c)) {
+      return closingText(overnight ? (1440 - now.min + c) : (c - now.min), today[1]);
+    }
+    if (now.min < o) {
+      const wait = o - now.min;
+      if (wait <= 60) return { state: "soon", text: `${wait}분 뒤 오픈 (${today[0]})` };
+      return { state: "closed", text: `오늘 ${today[0]} 오픈` };
+    }
+  }
+  for (let i = 1; i <= 7; i++) {
+    const d = (now.day + i) % 7, h = stall.hours[d];
+    if (h) return { state: "closed", text: `${i === 1 ? "내일" : DAYS[d] + "요일"} ${h[0]} 오픈` };
+  }
+  return { state: "closed", text: "영업 정보 없음" };
+}
+function closingText(left, closeAt) {
+  if (left <= 30) return { state: "soon", text: `곧 마감 (${closeAt}까지)` };
+  return { state: "open", text: `영업중 · ${closeAt}까지` };
+}
+
+// ---- 손님 제보 ----
+// SUPABASE_URL과 SUPABASE_ANON_KEY를 채우면 제보가 서버에 저장되어 모든 방문자와 공유돼요.
+// 비워 두면 지금처럼 이 브라우저에만 저장(localStorage)하고, 데모용 샘플 제보를 보여줘요.
+const SUPABASE_URL = "";       // 예: "https://abcd1234.supabase.co"
+const SUPABASE_ANON_KEY = "";  // Supabase 프로젝트의 anon public 키 (공개돼도 되는 키)
+const REMOTE = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
+let remoteReports = {};  // { stallId: [{open, at}] }
+
+async function fetchRemote() {
+  if (!REMOTE) return;
+  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/reports?select=stall_id,is_open,created_at&created_at=gte.${since}&order=created_at.desc&limit=2000`,
+      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } });
+    if (!r.ok) throw new Error(r.status);
+    const next = {};
+    for (const row of await r.json()) (next[row.stall_id] = next[row.stall_id] || []).push({ open: row.is_open, at: Date.parse(row.created_at) });
+    remoteReports = next;
+  } catch (e) { console.warn("제보 불러오기 실패", e); }
+}
+async function sendRemote(stallId, open) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/reports`, {
+    method: "POST",
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+               "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({ stall_id: stallId, is_open: open }),
+  });
+  if (!r.ok) throw new Error(r.status);
+}
+
+const FRESH_MIN = 120;  // 이 시간 안의 제보는 영업시간보다 우선
+const STORE_KEY = "winter-snack-reports-v1";
+const minutesAgo = m => Date.now() - m * 60000;
+// 데모용 샘플 제보 (페이지를 열 때마다 "몇 분 전"으로 생성)
+const SAMPLE_REPORTS = {
+  1: [{ open: true, at: minutesAgo(8) }, { open: true, at: minutesAgo(35) }],
+  4: [{ open: false, at: minutesAgo(20) }],
+  11: [{ open: true, at: minutesAgo(15) }],
+  12: [{ open: false, at: minutesAgo(50) }, { open: true, at: minutesAgo(140) }],
+  16: [{ open: true, at: minutesAgo(5) }],
+  9: [{ open: true, at: minutesAgo(300) }],
+};
+function loadMine() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch { return {}; }
+}
+function saveMine(m) { try { localStorage.setItem(STORE_KEY, JSON.stringify(m)); } catch {} }
+let myReports = loadMine();
+function reportsFor(id) {
+  const src = REMOTE ? (remoteReports[id] || []) : [...(SAMPLE_REPORTS[id] || []), ...(myReports[id] || [])];
+  return [...src].sort((a, b) => b.at - a.at);
+}
+function ago(ts) {
+  const m = Math.max(0, Math.round((Date.now() - ts) / 60000));
+  if (m < 1) return "방금";
+  if (m < 60) return `${m}분 전`;
+  if (m < 60 * 24) return `${Math.floor(m / 60)}시간 전`;
+  return `${Math.floor(m / 1440)}일 전`;
+}
+
+// 제보 + 영업시간을 합친 최종 상태
+function status(stall, now) {
+  const sched = scheduleStatus(stall, now);
+  const reps = reportsFor(stall.id);
+  const latest = reps[0];
+  const fresh = latest && (Date.now() - latest.at) / 60000 <= FRESH_MIN;
+  if (fresh) {
+    return {
+      state: latest.open ? "open" : "closed",
+      text: latest.open ? "영업중 (제보)" : "닫힘 (제보)",
+      report: `🙋 ${ago(latest.at)} 손님 제보: ${latest.open ? "열려 있어요" : "닫혀 있어요"}`,
+      fresh: true, sched,
+    };
+  }
+  return {
+    ...sched, sched,
+    report: latest ? `마지막 제보 ${ago(latest.at)} (${latest.open ? "열림" : "닫힘"}) · 영업시간 기준 추정` : "아직 제보 없음 · 영업시간 기준 추정",
+    fresh: false,
+  };
+}
+
+// ---- 지도 ----
+const map = L.map("map", { zoomControl: true }).setView([37.545, 126.98], 12);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+const markers = {};
+let filterType = "all", openOnly = false, query = "", userPos = null, activeId = null;
+
+function icon(stall, st) {
+  const emoji = filterType !== "all" && stall.types.includes(filterType) ? EMOJI[filterType] : EMOJI[stall.types[0]];
+  return L.divIcon({ className: "", html: `<div class="pin ${st.state}"><span>${emoji}</span></div>`,
+    iconSize: [30, 30], iconAnchor: [15, 30], popupAnchor: [0, -28] });
+}
+function distKm(a, b) {
+  const R = 6371, r = x => x * Math.PI / 180;
+  const dLat = r(b.lat - a.lat), dLng = r(b.lng - a.lng);
+  const h = Math.sin(dLat/2)**2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dLng/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+
+function hoursTable(stall, now) {
+  return `<table class="hours">` + [1,2,3,4,5,6,0].map(d => {
+    const h = stall.hours[d];
+    return `<tr class="${d === now.day ? "today" : ""}"><td>${DAYS[d]}</td><td>${h ? h[0] + " – " + h[1] : "휴무"}</td></tr>`;
+  }).join("") + "</table>";
+}
+function reportBox(stall, st) {
+  const recent = reportsFor(stall.id).slice(0, 4);
+  return `<div class="report-box">
+    <div class="q">지금 이 가게 앞이세요? 영업 여부를 알려주세요.</div>
+    <button class="yes" data-report="${stall.id}" data-open="1">🟢 지금 열려 있어요</button>
+    <button class="no" data-report="${stall.id}" data-open="0">⚪ 지금 닫혀 있어요</button>
+    ${recent.length ? `<ul>${recent.map(r => `<li>${ago(r.at)} · ${r.open ? "열림" : "닫힘"}</li>`).join("")}</ul>` : ""}
+    ${st.fresh ? `<div class="meta">영업시간 기준으로는: ${st.sched.text}</div>` : ""}
+  </div>`;
+}
+
+function renderCats() {
+  const el = document.getElementById("cats");
+  el.innerHTML = [`<button class="chip" data-type="all" aria-pressed="${filterType === "all"}">전체</button>`,
+    ...CATS.map(c => `<button class="chip" data-type="${c.key}" aria-pressed="${filterType === c.key}">${c.e} ${c.key}</button>`)].join("");
+  el.querySelectorAll("[data-type]").forEach(b => b.addEventListener("click", () => {
+    filterType = b.dataset.type; renderCats(); render();
+  }));
+}
+
+function render() {
+  const now = kstNow();
+  const hh = String(Math.floor(now.min / 60)).padStart(2, "0"), mm = String(now.min % 60).padStart(2, "0");
+  document.getElementById("now").textContent = `(지금 ${DAYS[now.day]}요일 ${hh}:${mm}, 한국 시간)`;
+
+  let rows = STALLS.map(s => ({ s, st: status(s, now), d: userPos ? distKm(userPos, s) : null }));
+  rows = rows.filter(({ s, st }) =>
+    (filterType === "all" || s.types.includes(filterType)) &&
+    (!openOnly || st.state !== "closed") &&
+    (!query || (s.name + s.area + s.menu + s.types.join("")).includes(query)));
+  const rank = { open: 0, soon: 1, closed: 2 };
+  rows.sort((a, b) => userPos ? a.d - b.d
+    : rank[a.st.state] - rank[b.st.state] || (b.st.fresh - a.st.fresh) || a.s.name.localeCompare(b.s.name, "ko"));
+
+  Object.values(markers).forEach(m => map.removeLayer(m));
+  for (const k in markers) delete markers[k];
+  rows.forEach(({ s, st }) => {
+    const m = markers[s.id] = L.marker([s.lat, s.lng], { icon: icon(s, st) }).addTo(map);
+    m.bindPopup(`<b>${esc(s.name)}</b><br>${st.text}<br><small>${esc(st.report)}</small><br><small>${esc(s.menu)}</small>`);
+    m.on("click", () => select(s.id, false));
+  });
+
+  const openCount = rows.filter(r => r.st.state !== "closed").length;
+  const label = filterType === "all" ? "" : `${EMOJI[filterType]} ${filterType} · `;
+  const list = document.getElementById("list");
+  list.innerHTML = `<div class="summary">${label}${rows.length}곳 중 ${openCount}곳 영업중${userPos ? " · 가까운 순" : ""}</div>` +
+    (rows.length ? rows.map(({ s, st, d }) => `
+      <div class="card ${s.id === activeId ? "active" : ""}" data-id="${s.id}">
+        <div class="top"><h3>${esc(s.name)}</h3><span class="badge ${st.state}">${st.text}</span></div>
+        <div class="reportline ${st.fresh ? "" : "stale"}">${esc(st.report)}</div>
+        <div class="meta">${esc(s.area)}${d != null ? ` · ${d < 1 ? Math.round(d * 1000) + "m" : d.toFixed(1) + "km"}` : ""}<br>${esc(s.menu)}</div>
+        <div class="tags">${s.types.map(t => `<span class="tag">${EMOJI[t]} ${t}</span>`).join("")}<span class="tag">${esc(s.pay)}</span></div>
+        <div class="detail">${hoursTable(s, now)}${reportBox(s, st)}</div>
+      </div>`).join("")
+    : `<div class="empty">조건에 맞는 가게가 없어요.</div>`);
+  list.querySelectorAll(".card").forEach(el => el.addEventListener("click", () => select(+el.dataset.id, true)));
+  list.querySelectorAll("[data-report]").forEach(b => b.addEventListener("click", async e => {
+    e.stopPropagation();
+    const id = +b.dataset.report, open = b.dataset.open === "1";
+    const last = lastSent[id];
+    if (last && Date.now() - last < 60 * 1000) { toast("같은 가게는 1분에 한 번만 제보할 수 있어요."); return; }
+    lastSent[id] = Date.now();
+    if (REMOTE) {
+      try { await sendRemote(id, open); (remoteReports[id] = remoteReports[id] || []).push({ open, at: Date.now() }); }
+      catch { delete lastSent[id]; toast("제보를 보내지 못했어요. 잠시 뒤 다시 시도해 주세요."); return; }
+    } else {
+      (myReports[id] = myReports[id] || []).push({ open, at: Date.now() });
+      saveMine(myReports);
+    }
+    toast("제보 고마워요! 다른 손님들에게 도움이 돼요.");
+    render();
+  }));
+}
+
+function select(id, fromList) {
+  activeId = activeId === id && fromList ? null : id;
+  const s = STALLS.find(x => x.id === id);
+  if (fromList && activeId) { map.setView([s.lat, s.lng], 15); }
+  render();
+  if (fromList && activeId) markers[id]?.openPopup();
+  if (!fromList) document.querySelector(`.card[data-id="${id}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 2000);
+}
+
+// ---- 컨트롤 ----
+document.getElementById("openOnly").addEventListener("click", e => {
+  openOnly = !openOnly; e.currentTarget.setAttribute("aria-pressed", openOnly); render();
+});
+document.getElementById("q").addEventListener("input", e => { query = e.target.value.trim(); render(); });
+document.getElementById("locate").addEventListener("click", e => {
+  const btn = e.currentTarget;
+  if (userPos) { userPos = null; btn.setAttribute("aria-pressed", false); render(); return; }
+  if (!navigator.geolocation) { btn.textContent = "📍 위치 기능 없음"; return; }
+  navigator.geolocation.getCurrentPosition(p => {
+    userPos = { lat: p.coords.latitude, lng: p.coords.longitude };
+    btn.setAttribute("aria-pressed", true);
+    L.circleMarker([userPos.lat, userPos.lng], { radius: 7, color: "#2a6df4", fillOpacity: .9 }).addTo(map);
+    map.setView([userPos.lat, userPos.lng], 14);
+    render();
+  }, () => btn.textContent = "📍 위치 권한 필요");
+});
+
+const lastSent = {};
+renderCats();
+render();
+fetchRemote().then(render);
+setInterval(async () => { await fetchRemote(); render(); }, 60 * 1000);
+</script>
+</body>
+</html>
