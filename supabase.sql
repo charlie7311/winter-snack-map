@@ -14,6 +14,9 @@ create index if not exists reports_created_at_idx on public.reports (created_at 
 -- 수정·삭제는 아무도 못 함(관리자는 대시보드에서 가능).
 alter table public.reports enable row level security;
 
+-- 새 Supabase 프로젝트는 테이블 권한을 자동으로 주지 않아서 직접 허용해요(읽기·쓰기만).
+grant select, insert on public.reports to anon;
+
 drop policy if exists "read recent reports" on public.reports;
 create policy "read recent reports" on public.reports
   for select to anon
