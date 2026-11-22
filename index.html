@@ -94,6 +94,38 @@
     opacity: 0; transition: opacity .2s; pointer-events: none;
   }
   #toast.show { opacity: 1; }
+  .chip.add { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .tag.sample { color: var(--muted); border-style: dashed; }
+  .tag.new { color: var(--report); border-color: var(--report); }
+  #pickBanner {
+    display: none; position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1100;
+    background: var(--panel); border: 2px solid var(--accent); border-radius: 12px; padding: 10px 14px;
+    font-size: 14px; box-shadow: 0 4px 16px rgba(0,0,0,.2); width: min(420px, calc(100% - 32px));
+  }
+  #pickBanner.show { display: block; }
+  #pickBanner .row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  body.picking #map { cursor: crosshair; }
+  #modal { display: none; position: fixed; inset: 0; z-index: 1200; background: rgba(0,0,0,.45); }
+  #modal.show { display: flex; align-items: center; justify-content: center; padding: 16px; }
+  #modal form {
+    background: var(--panel); color: var(--text); border-radius: 14px; padding: 18px; width: min(480px, 100%);
+    max-height: calc(100vh - 32px); overflow-y: auto; font-size: 14px;
+  }
+  #modal h2 { margin: 0 0 4px; font-size: 18px; }
+  #modal label.f { display: block; margin-top: 12px; font-weight: 600; font-size: 13px; }
+  #modal input[type=text], #modal input[type=time] {
+    width: 100%; margin-top: 4px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--text); font-size: 14px;
+  }
+  #modal input[type=time] { width: auto; }
+  #modal .checks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  #modal .checks label { border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 13px; cursor: pointer; background: var(--chip); }
+  #modal .checks input { margin: 0 4px 0 0; vertical-align: -1px; }
+  #modal .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  #modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  #modal button { border-radius: 8px; padding: 8px 14px; font-size: 14px; cursor: pointer; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  #modal button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  #modal .err { color: #c0392b; font-size: 13px; margin-top: 8px; min-height: 1em; }
 </style>
 </head>
 <body>
@@ -102,6 +134,7 @@
   <p>붕어빵부터 군고구마까지, 지금 열린 겨울 간식 노점을 찾아보세요. <span id="now"></span></p>
   <div class="cats" id="cats"></div>
   <div class="controls">
+    <button class="chip add" id="addStall">＋ 가게 등록</button>
     <button class="chip" id="openOnly" aria-pressed="false">지금 영업중만</button>
     <button class="chip" id="locate" aria-pressed="false">📍 내 주변</button>
     <input type="search" id="q" placeholder="가게·동네·메뉴 검색">
@@ -111,8 +144,52 @@
   <div id="map"></div>
   <section id="list"></section>
 </main>
-<footer>가게 정보는 아직 샘플입니다(실제 가게 아님). 영업 여부는 손님 제보를 우선으로 보여주고, 최근 제보가 없으면 등록된 영업시간으로 추정해요.</footer>
+<footer>"샘플" 표시가 붙은 가게는 예시예요. 아는 노점이 있으면 ＋ 가게 등록으로 알려 주세요. 영업 여부는 손님 제보를 우선으로 보여주고, 최근 제보가 없으면 등록된 영업시간으로 추정해요.</footer>
 <div id="toast"></div>
+
+<div id="pickBanner">
+  <b>📍 지도에서 가게 위치를 눌러 주세요</b>
+  <div class="hint" style="font-size:12px;color:var(--muted);margin-top:2px">확대해서 정확한 자리를 찍을수록 좋아요.</div>
+  <div class="row">
+    <button class="chip" id="pickMine">내 위치로 하기</button>
+    <button class="chip" id="pickCancel">취소</button>
+  </div>
+</div>
+
+<div id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <form id="stallForm" novalidate>
+    <h2 id="modalTitle">새 가게 등록</h2>
+    <div class="hint" id="pickedAt"></div>
+    <label class="f" for="fName">가게 이름 *</label>
+    <input type="text" id="fName" maxlength="40" placeholder="예: 신촌역 2번출구 붕어빵">
+    <label class="f" for="fArea">동네</label>
+    <input type="text" id="fArea" maxlength="40" placeholder="예: 서대문구 신촌">
+    <label class="f">파는 것 * <span class="hint">(여러 개 골라도 돼요)</span></label>
+    <div class="checks" id="fTypes"></div>
+    <label class="f" for="fMenu">메뉴·가격</label>
+    <input type="text" id="fMenu" maxlength="100" placeholder="예: 팥붕 3개 2,000원">
+    <label class="f">결제</label>
+    <div class="checks" id="fPay">
+      <label><input type="checkbox" value="현금">현금</label>
+      <label><input type="checkbox" value="카드">카드</label>
+      <label><input type="checkbox" value="계좌이체">계좌이체</label>
+    </div>
+    <label class="f">영업시간</label>
+    <div class="checks"><label><input type="checkbox" id="fNoHours">잘 몰라요</label></div>
+    <div id="hoursBox">
+      <div style="margin-top:6px"><input type="time" id="fOpen" value="15:00"> ~ <input type="time" id="fClose" value="21:00"></div>
+      <div class="hint">자정을 넘기면 끝나는 시간을 더 이르게 적으면 돼요 (예: 18:00 ~ 01:00).</div>
+      <label class="f">쉬는 요일</label>
+      <div class="checks" id="fOff"></div>
+    </div>
+    <div class="err" id="fErr"></div>
+    <div class="actions">
+      <button type="button" id="fRepick">위치 다시 찍기</button>
+      <button type="button" id="fCancel">취소</button>
+      <button type="submit" class="primary" id="fSubmit">등록하기</button>
+    </div>
+  </form>
+</div>
 
 <script>
 // ---- 카테고리 ----
@@ -128,7 +205,7 @@ const EMOJI = Object.fromEntries(CATS.map(c => [c.key, c.e]));
 // hours: 요일별 [시작, 끝] (0=일 ... 6=토), null = 휴무. 끝이 시작보다 작으면 자정을 넘김.
 const W = (o, c) => [o, c];
 const daily = (o, c, off = []) => [0,1,2,3,4,5,6].map(d => off.includes(d) ? null : W(o, c));
-const STALLS = [
+const SAMPLE_STALLS = [
   { id: 1, name: "신촌역 3번출구 붕어빵", area: "서대문구 신촌", lat: 37.5553, lng: 126.9368,
     types: ["붕어빵"], menu: "팥·슈크림 붕어빵 3개 2,000원", pay: "현금·계좌이체",
     hours: [null, W("15:00","21:00"), W("15:00","21:00"), W("15:00","21:00"), W("15:00","21:00"), W("15:00","22:00"), W("13:00","22:00")] },
@@ -196,6 +273,10 @@ const STALLS = [
     types: ["계란빵", "델리만쥬"], menu: "계란빵 2,000원 · 델리만쥬 10개 2,000원", pay: "현금",
     hours: daily("09:00", "20:00") },
 ];
+SAMPLE_STALLS.forEach(s => s.sample = true);
+let userStalls = [];               // 손님이 등록한 가게 (서버 또는 이 브라우저)
+let STALLS = [...SAMPLE_STALLS];
+function rebuildStalls() { STALLS = [...userStalls, ...SAMPLE_STALLS]; }
 const DAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
 // ---- 시간 계산: 보는 사람의 시간대와 관계없이 한국 시간 기준 ----
@@ -211,6 +292,7 @@ const toMin = s => { const [h, m] = s.split(":").map(Number); return h * 60 + m;
 
 // 영업시간 기준 추정. 반환: {state: "open"|"soon"|"closed", text}
 function scheduleStatus(stall, now) {
+  if (!stall.hours) return { state: "closed", text: "영업시간 미등록" };
   const today = stall.hours[now.day];
   const yday = stall.hours[(now.day + 6) % 7];
   if (yday) {
@@ -265,6 +347,16 @@ async function fetchRemote() {
     for (const row of await r.json()) (next[row.stall_id] = next[row.stall_id] || []).push({ open: row.is_open, at: Date.parse(row.created_at) });
     remoteReports = next;
   } catch (e) { console.warn("제보 불러오기 실패", e); }
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/stalls?select=*&order=created_at.desc&limit=2000`, { headers: authHeaders() });
+    if (!r.ok) throw new Error(r.status);
+    userStalls = (await r.json()).map(rowToStall);
+    rebuildStalls();
+  } catch (e) { console.warn("가게 불러오기 실패", e); }
+}
+function rowToStall(r) {
+  return { id: r.id, name: r.name, area: r.area || "", lat: r.lat, lng: r.lng, types: r.types,
+           menu: r.menu || "", pay: r.pay || "", hours: r.hours || null, createdAt: Date.parse(r.created_at) };
 }
 async function sendRemote(stallId, open) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/reports`, {
@@ -336,7 +428,7 @@ const markers = {};
 let filterType = "all", openOnly = false, query = "", userPos = null, activeId = null;
 
 function icon(stall, st) {
-  const emoji = filterType !== "all" && stall.types.includes(filterType) ? EMOJI[filterType] : EMOJI[stall.types[0]];
+  const emoji = filterType !== "all" && stall.types.includes(filterType) ? EMOJI[filterType] : (EMOJI[stall.types[0]] || "📍");
   return L.divIcon({ className: "", html: `<div class="pin ${st.state}"><span>${emoji}</span></div>`,
     iconSize: [30, 30], iconAnchor: [15, 30], popupAnchor: [0, -28] });
 }
@@ -349,6 +441,7 @@ function distKm(a, b) {
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 
 function hoursTable(stall, now) {
+  if (!stall.hours) return `<div class="hours">영업시간이 아직 등록되지 않았어요. 가게 앞이라면 아래에서 영업 여부를 알려 주세요.</div>`;
   return `<table class="hours">` + [1,2,3,4,5,6,0].map(d => {
     const h = stall.hours[d];
     return `<tr class="${d === now.day ? "today" : ""}"><td>${DAYS[d]}</td><td>${h ? h[0] + " – " + h[1] : "휴무"}</td></tr>`;
@@ -404,8 +497,8 @@ function render() {
       <div class="card ${s.id === activeId ? "active" : ""}" data-id="${s.id}">
         <div class="top"><h3>${esc(s.name)}</h3><span class="badge ${st.state}">${st.text}</span></div>
         <div class="reportline ${st.fresh ? "" : "stale"}">${esc(st.report)}</div>
-        <div class="meta">${esc(s.area)}${d != null ? ` · ${d < 1 ? Math.round(d * 1000) + "m" : d.toFixed(1) + "km"}` : ""}<br>${esc(s.menu)}</div>
-        <div class="tags">${s.types.map(t => `<span class="tag">${EMOJI[t]} ${t}</span>`).join("")}<span class="tag">${esc(s.pay)}</span></div>
+        <div class="meta">${esc(s.area)}${d != null ? ` · ${d < 1 ? Math.round(d * 1000) + "m" : d.toFixed(1) + "km"}` : ""}${s.menu ? `<br>${esc(s.menu)}` : ""}</div>
+        <div class="tags">${s.sample ? `<span class="tag sample">샘플</span>` : ""}${!s.sample && s.createdAt && Date.now() - s.createdAt < 7 * 86400000 ? `<span class="tag new">새로 등록</span>` : ""}${s.types.map(t => `<span class="tag">${EMOJI[t] || ""} ${esc(t)}</span>`).join("")}${s.pay ? `<span class="tag">${esc(s.pay)}</span>` : ""}</div>
         <div class="detail">${hoursTable(s, now)}${reportBox(s, st)}</div>
       </div>`).join("")
     : `<div class="empty">조건에 맞는 가게가 없어요.</div>`);
@@ -458,6 +551,110 @@ document.getElementById("locate").addEventListener("click", e => {
     map.setView([userPos.lat, userPos.lng], 14);
     render();
   }, () => btn.textContent = "📍 위치 권한 필요");
+});
+
+
+// ---- 가게 등록 ----
+const LOCAL_STALLS_KEY = "winter-snack-stalls-v1";
+if (!REMOTE) {
+  try { userStalls = JSON.parse(localStorage.getItem(LOCAL_STALLS_KEY)) || []; } catch { userStalls = []; }
+  rebuildStalls();
+}
+let picking = false, picked = null, pickMarker = null, lastStallSent = 0;
+const $ = id => document.getElementById(id);
+$("fTypes").innerHTML = CATS.map(c => `<label><input type="checkbox" value="${c.key}">${c.e} ${c.key}</label>`).join("");
+$("fOff").innerHTML = [1,2,3,4,5,6,0].map(d => `<label><input type="checkbox" value="${d}">${DAYS[d]}</label>`).join("");
+$("stallForm").addEventListener("input", () => { $("fErr").textContent = ""; });
+$("fNoHours").addEventListener("change", e => { $("hoursBox").style.display = e.target.checked ? "none" : ""; });
+
+function startPick() {
+  picking = true; document.body.classList.add("picking"); $("pickBanner").classList.add("show");
+  $("modal").classList.remove("show");
+}
+function stopPick() {
+  picking = false; document.body.classList.remove("picking"); $("pickBanner").classList.remove("show");
+}
+function setPicked(lat, lng) {
+  picked = { lat, lng };
+  if (pickMarker) map.removeLayer(pickMarker);
+  pickMarker = L.marker([lat, lng], { icon: L.divIcon({ className: "", html: `<div class="pin soon"><span>＋</span></div>`, iconSize: [30, 30], iconAnchor: [15, 30] }) }).addTo(map);
+  stopPick();
+  $("pickedAt").textContent = `선택한 위치: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  $("fErr").textContent = "";
+  $("modal").classList.add("show");
+  $("fName").focus();
+}
+function closeForm() {
+  $("modal").classList.remove("show"); stopPick();
+  if (pickMarker) { map.removeLayer(pickMarker); pickMarker = null; }
+}
+$("addStall").addEventListener("click", startPick);
+$("pickCancel").addEventListener("click", closeForm);
+$("fCancel").addEventListener("click", closeForm);
+$("fRepick").addEventListener("click", startPick);
+$("pickMine").addEventListener("click", () => {
+  if (!navigator.geolocation) { toast("이 브라우저는 위치 기능이 없어요. 지도를 눌러 주세요."); return; }
+  navigator.geolocation.getCurrentPosition(p => { map.setView([p.coords.latitude, p.coords.longitude], 17); setPicked(p.coords.latitude, p.coords.longitude); },
+    () => toast("위치 권한이 없어요. 지도를 눌러 주세요."));
+});
+map.on("click", e => { if (picking) setPicked(e.latlng.lat, e.latlng.lng); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && (picking || $("modal").classList.contains("show"))) closeForm(); });
+
+function readForm() {
+  const name = $("fName").value.trim();
+  const types = [...$("fTypes").querySelectorAll("input:checked")].map(i => i.value);
+  if (name.length < 2) return { err: "가게 이름을 2글자 이상 적어 주세요." };
+  if (!types.length) return { err: "파는 것을 하나 이상 골라 주세요." };
+  if (!picked) return { err: "위치를 먼저 찍어 주세요." };
+  if (picked.lat < 33 || picked.lat > 39 || picked.lng < 124 || picked.lng > 132) return { err: "지금은 국내 가게만 등록할 수 있어요." };
+  let hours = null;
+  if (!$("fNoHours").checked) {
+    const o = $("fOpen").value, c = $("fClose").value;
+    if (!o || !c || o === c) return { err: "여는 시간과 닫는 시간을 확인해 주세요." };
+    const off = [...$("fOff").querySelectorAll("input:checked")].map(i => +i.value);
+    if (off.length === 7) return { err: "모든 요일을 쉬는 날로 고를 수는 없어요." };
+    hours = [0,1,2,3,4,5,6].map(d => off.includes(d) ? null : [o, c]);
+  }
+  return { row: {
+    name, area: $("fArea").value.trim() || null, lat: +picked.lat.toFixed(6), lng: +picked.lng.toFixed(6), types,
+    menu: $("fMenu").value.trim() || null,
+    pay: [...$("fPay").querySelectorAll("input:checked")].map(i => i.value).join("·") || null,
+    hours,
+  } };
+}
+$("stallForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const { err, row } = readForm();
+  if (err) { $("fErr").textContent = err; return; }
+  if (Date.now() - lastStallSent < 5 * 60 * 1000) { $("fErr").textContent = "가게 등록은 5분에 한 번만 할 수 있어요."; return; }
+  $("fSubmit").disabled = true;
+  try {
+    let stall;
+    if (REMOTE) {
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/stalls`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json", Prefer: "return=representation" },
+        body: JSON.stringify(row),
+      });
+      if (!r.ok) throw new Error(r.status + " " + await r.text());
+      stall = rowToStall((await r.json())[0]);
+    } else {
+      stall = rowToStall({ ...row, id: 900000 + userStalls.length + 1, created_at: new Date().toISOString() });
+      try { localStorage.setItem(LOCAL_STALLS_KEY, JSON.stringify([stall, ...userStalls])); } catch {}
+    }
+    lastStallSent = Date.now();
+    userStalls = [stall, ...userStalls.filter(x => x.id !== stall.id)];
+    rebuildStalls();
+    $("stallForm").reset(); $("hoursBox").style.display = "";
+    closeForm();
+    filterType = "all"; renderCats();
+    activeId = stall.id; render();
+    map.setView([stall.lat, stall.lng], 16); markers[stall.id]?.openPopup();
+    toast("등록 고마워요! 지도에 바로 올라갔어요.");
+  } catch (ex) {
+    console.warn("가게 등록 실패", ex);
+    $("fErr").textContent = "등록하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
+  } finally { $("fSubmit").disabled = false; }
 });
 
 const lastSent = {};
