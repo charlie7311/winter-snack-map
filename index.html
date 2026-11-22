@@ -95,7 +95,6 @@
   }
   #toast.show { opacity: 1; }
   .chip.add { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-  .tag.sample { color: var(--muted); border-style: dashed; }
   .tag.new { color: var(--report); border-color: var(--report); }
   #pickBanner {
     display: none; position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1100;
@@ -144,7 +143,7 @@
   <div id="map"></div>
   <section id="list"></section>
 </main>
-<footer>"샘플" 표시가 붙은 가게는 예시예요. 아는 노점이 있으면 ＋ 가게 등록으로 알려 주세요. 영업 여부는 손님 제보를 우선으로 보여주고, 최근 제보가 없으면 등록된 영업시간으로 추정해요.</footer>
+<footer>아는 노점이 있으면 ＋ 가게 등록으로 알려 주세요. 영업 여부는 손님 제보를 우선으로 보여주고, 최근 제보가 없으면 등록된 영업시간으로 추정해요.</footer>
 <div id="toast"></div>
 
 <div id="pickBanner">
@@ -201,82 +200,10 @@ const CATS = [
 ];
 const EMOJI = Object.fromEntries(CATS.map(c => [c.key, c.e]));
 
-// ---- 샘플 데이터 (가상) ----
 // hours: 요일별 [시작, 끝] (0=일 ... 6=토), null = 휴무. 끝이 시작보다 작으면 자정을 넘김.
-const W = (o, c) => [o, c];
-const daily = (o, c, off = []) => [0,1,2,3,4,5,6].map(d => off.includes(d) ? null : W(o, c));
-const SAMPLE_STALLS = [
-  { id: 1, name: "신촌역 3번출구 붕어빵", area: "서대문구 신촌", lat: 37.5553, lng: 126.9368,
-    types: ["붕어빵"], menu: "팥·슈크림 붕어빵 3개 2,000원", pay: "현금·계좌이체",
-    hours: [null, W("15:00","21:00"), W("15:00","21:00"), W("15:00","21:00"), W("15:00","21:00"), W("15:00","22:00"), W("13:00","22:00")] },
-  { id: 2, name: "이대 앞 꿀호떡", area: "서대문구 대현동", lat: 37.5579, lng: 126.9460,
-    types: ["호떡"], menu: "씨앗호떡 2,000원 · 꿀호떡 1,500원", pay: "현금·카드",
-    hours: daily("12:00", "20:00", [1]) },
-  { id: 3, name: "홍대 놀이터 옆 잉어빵·타코야끼", area: "마포구 서교동", lat: 37.5509, lng: 126.9220,
-    types: ["붕어빵", "타코야끼"], menu: "잉어빵 4개 3,000원 · 타코야끼 8알 5,000원", pay: "현금·계좌이체",
-    hours: [W("14:00","23:00"), W("16:00","23:00"), W("16:00","23:00"), W("16:00","23:00"), W("16:00","23:00"), W("16:00","01:00"), W("14:00","01:00")] },
-  { id: 4, name: "망원시장 입구 간식 포차", area: "마포구 망원동", lat: 37.5560, lng: 126.9056,
-    types: ["붕어빵", "호떡", "어묵"], menu: "붕어빵 3개 2,000원 · 호떡 1,500원 · 어묵 1,000원", pay: "현금",
-    hours: daily("11:00", "19:00", [2]) },
-  { id: 5, name: "광화문 골목 붕어빵", area: "종로구 신문로", lat: 37.5705, lng: 126.9745,
-    types: ["붕어빵"], menu: "팥붕 3개 2,000원", pay: "현금·카드",
-    hours: daily("11:30", "19:00", [0, 6]) },
-  { id: 6, name: "종각 젊음의거리 호떡·어묵", area: "종로구 관철동", lat: 37.5690, lng: 126.9850,
-    types: ["호떡", "어묵"], menu: "찹쌀호떡 2,000원 · 어묵 2개 2,000원", pay: "현금·카드",
-    hours: [W("15:00","22:00"), W("15:00","22:00"), W("15:00","22:00"), W("15:00","22:00"), W("15:00","22:00"), W("15:00","23:30"), W("15:00","23:30")] },
-  { id: 7, name: "건대입구 미니붕어빵", area: "광진구 화양동", lat: 37.5404, lng: 127.0700,
-    types: ["붕어빵"], menu: "미니붕어빵 10개 3,000원", pay: "현금·계좌이체",
-    hours: [W("14:00","22:00"), W("16:00","22:00"), W("16:00","22:00"), W("16:00","22:00"), W("16:00","22:00"), W("16:00","23:00"), W("14:00","23:00")] },
-  { id: 8, name: "강남역 11번출구 호떡", area: "강남구 역삼동", lat: 37.4985, lng: 127.0282,
-    types: ["호떡"], menu: "씨앗호떡 2,500원", pay: "카드·현금",
-    hours: [null, W("17:00","23:00"), W("17:00","23:00"), W("17:00","23:00"), W("17:00","23:00"), W("17:00","00:30"), W("15:00","00:30")] },
-  { id: 9, name: "잠실새내 붕어빵 아저씨", area: "송파구 잠실동", lat: 37.5115, lng: 127.0860,
-    types: ["붕어빵", "호떡"], menu: "붕어빵 2개 1,000원 · 호떡 1,500원", pay: "현금",
-    hours: daily("15:00", "21:00") },
-  { id: 10, name: "노량진 학원가 붕어빵", area: "동작구 노량진동", lat: 37.5133, lng: 126.9426,
-    types: ["붕어빵", "계란빵"], menu: "팥·슈크림 3개 2,000원 · 계란빵 1,500원", pay: "현금·계좌이체",
-    hours: daily("07:30", "10:00", [0, 6]) },
-  { id: 11, name: "혜화역 군고구마 드럼통", area: "종로구 명륜동", lat: 37.5822, lng: 127.0019,
-    types: ["군고구마", "군밤"], menu: "군고구마 3개 5,000원 · 군밤 한 봉 5,000원", pay: "현금·계좌이체",
-    hours: daily("16:00", "22:00", [1]) },
-  { id: 12, name: "명동 입구 군밤", area: "중구 명동", lat: 37.5636, lng: 126.9827,
-    types: ["군밤", "옥수수"], menu: "군밤 한 봉 5,000원 · 찰옥수수 3,000원", pay: "현금·카드",
-    hours: daily("12:00", "21:00") },
-  { id: 13, name: "서울역 계란빵", area: "용산구 동자동", lat: 37.5547, lng: 126.9707,
-    types: ["계란빵"], menu: "계란빵 2,000원", pay: "현금",
-    hours: daily("07:00", "13:00", [0]) },
-  { id: 14, name: "남대문시장 국화빵", area: "중구 남창동", lat: 37.5592, lng: 126.9774,
-    types: ["국화빵", "땅콩과자"], menu: "국화빵 10개 3,000원 · 땅콩과자 한 봉 3,000원", pay: "현금",
-    hours: daily("10:00", "18:00", [0]) },
-  { id: 15, name: "영등포역 델리만쥬", area: "영등포구 영등포동", lat: 37.5157, lng: 126.9075,
-    types: ["델리만쥬"], menu: "델리만쥬 15개 3,000원", pay: "현금·카드",
-    hours: daily("10:00", "22:00") },
-  { id: 16, name: "합정역 어묵·떡꼬치", area: "마포구 합정동", lat: 37.5497, lng: 126.9139,
-    types: ["어묵"], menu: "어묵 1,000원 · 국물 무료", pay: "현금·카드",
-    hours: [W("17:00","02:00"), null, W("17:00","02:00"), W("17:00","02:00"), W("17:00","02:00"), W("17:00","03:00"), W("17:00","03:00")] },
-  { id: 17, name: "성수동 크로플 와플", area: "성동구 성수동", lat: 37.5443, lng: 127.0557,
-    types: ["와플"], menu: "생크림 와플 3,000원 · 사과잼 와플 3,000원", pay: "카드·현금",
-    hours: daily("13:00", "21:00", [1]) },
-  { id: 18, name: "신림 순대타운 옆 타코야끼", area: "관악구 신림동", lat: 37.4842, lng: 126.9297,
-    types: ["타코야끼"], menu: "타코야끼 6알 4,000원", pay: "현금·계좌이체",
-    hours: daily("16:00", "23:00", [2]) },
-  { id: 19, name: "청량리 옥수수·군고구마", area: "동대문구 전농동", lat: 37.5803, lng: 127.0470,
-    types: ["옥수수", "군고구마"], menu: "찐옥수수 2개 4,000원 · 군고구마 3,000원", pay: "현금",
-    hours: daily("11:00", "20:00") },
-  { id: 20, name: "고속터미널 땅콩빵·호두과자", area: "서초구 반포동", lat: 37.5049, lng: 127.0050,
-    types: ["땅콩과자"], menu: "땅콩빵 한 봉 3,000원", pay: "현금·카드",
-    hours: daily("08:00", "21:00") },
-  { id: 21, name: "목동 학원가 국화빵·와플", area: "양천구 목동", lat: 37.5268, lng: 126.8750,
-    types: ["국화빵", "와플"], menu: "국화빵 8개 2,000원 · 와플 2,500원", pay: "현금·계좌이체",
-    hours: daily("14:00", "22:00", [0]) },
-  { id: 22, name: "수유역 계란빵·델리만쥬", area: "강북구 수유동", lat: 37.6380, lng: 127.0255,
-    types: ["계란빵", "델리만쥬"], menu: "계란빵 2,000원 · 델리만쥬 10개 2,000원", pay: "현금",
-    hours: daily("09:00", "20:00") },
-];
-SAMPLE_STALLS.forEach(s => s.sample = true);
 let userStalls = [];               // 손님이 등록한 가게 (서버 또는 이 브라우저)
-let STALLS = [...SAMPLE_STALLS];
-function rebuildStalls() { STALLS = [...userStalls, ...SAMPLE_STALLS]; }
+let STALLS = [];
+function rebuildStalls() { STALLS = [...userStalls]; }
 const DAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
 // ---- 시간 계산: 보는 사람의 시간대와 관계없이 한국 시간 기준 ----
@@ -324,7 +251,7 @@ function closingText(left, closeAt) {
 
 // ---- 손님 제보 ----
 // SUPABASE_URL과 SUPABASE_ANON_KEY를 채우면 제보가 서버에 저장되어 모든 방문자와 공유돼요.
-// 비워 두면 지금처럼 이 브라우저에만 저장(localStorage)하고, 데모용 샘플 제보를 보여줘요.
+// 비워 두면 지금처럼 이 브라우저에만 저장(localStorage)해요.
 const SUPABASE_URL = "https://qzisdwtstsicpjqvynyf.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_cJEqZcwTtoUDYUz4w-HUFg_Xb0YGxEM";  // publishable 키 (공개돼도 되는 키)
 const REMOTE = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
@@ -370,23 +297,13 @@ async function sendRemote(stallId, open) {
 
 const FRESH_MIN = 120;  // 이 시간 안의 제보는 영업시간보다 우선
 const STORE_KEY = "winter-snack-reports-v1";
-const minutesAgo = m => Date.now() - m * 60000;
-// 데모용 샘플 제보 (페이지를 열 때마다 "몇 분 전"으로 생성)
-const SAMPLE_REPORTS = {
-  1: [{ open: true, at: minutesAgo(8) }, { open: true, at: minutesAgo(35) }],
-  4: [{ open: false, at: minutesAgo(20) }],
-  11: [{ open: true, at: minutesAgo(15) }],
-  12: [{ open: false, at: minutesAgo(50) }, { open: true, at: minutesAgo(140) }],
-  16: [{ open: true, at: minutesAgo(5) }],
-  9: [{ open: true, at: minutesAgo(300) }],
-};
 function loadMine() {
   try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch { return {}; }
 }
 function saveMine(m) { try { localStorage.setItem(STORE_KEY, JSON.stringify(m)); } catch {} }
 let myReports = loadMine();
 function reportsFor(id) {
-  const src = REMOTE ? (remoteReports[id] || []) : [...(SAMPLE_REPORTS[id] || []), ...(myReports[id] || [])];
+  const src = REMOTE ? (remoteReports[id] || []) : (myReports[id] || []);
   return [...src].sort((a, b) => b.at - a.at);
 }
 function ago(ts) {
@@ -498,7 +415,7 @@ function render() {
         <div class="top"><h3>${esc(s.name)}</h3><span class="badge ${st.state}">${st.text}</span></div>
         <div class="reportline ${st.fresh ? "" : "stale"}">${esc(st.report)}</div>
         <div class="meta">${esc(s.area)}${d != null ? ` · ${d < 1 ? Math.round(d * 1000) + "m" : d.toFixed(1) + "km"}` : ""}${s.menu ? `<br>${esc(s.menu)}` : ""}</div>
-        <div class="tags">${s.sample ? `<span class="tag sample">샘플</span>` : ""}${!s.sample && s.createdAt && Date.now() - s.createdAt < 7 * 86400000 ? `<span class="tag new">새로 등록</span>` : ""}${s.types.map(t => `<span class="tag">${EMOJI[t] || ""} ${esc(t)}</span>`).join("")}${s.pay ? `<span class="tag">${esc(s.pay)}</span>` : ""}</div>
+        <div class="tags">${s.createdAt && Date.now() - s.createdAt < 7 * 86400000 ? `<span class="tag new">새로 등록</span>` : ""}${s.types.map(t => `<span class="tag">${EMOJI[t] || ""} ${esc(t)}</span>`).join("")}${s.pay ? `<span class="tag">${esc(s.pay)}</span>` : ""}</div>
         <div class="detail">${hoursTable(s, now)}${reportBox(s, st)}</div>
       </div>`).join("")
     : `<div class="empty">조건에 맞는 가게가 없어요.</div>`);
