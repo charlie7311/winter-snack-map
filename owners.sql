@@ -51,6 +51,7 @@ $$;
 --   {"open": true|false}                       지금 영업중 / 영업 끝
 --   {"hours": [[ "15:00","21:00" ], null, ...]} 일~토 7칸, null = 휴무
 --   {"menu": "팥붕 3개 2,000원"}
+--   {"lat": 37.5, "lng": 127.0}                가게 위치
 create or replace function public.owner_update(p_token text, p_stall_id bigint, p_patch jsonb)
 returns void language plpgsql security definer set search_path = public as $$
 declare d jsonb;
@@ -75,6 +76,12 @@ begin
   end if;
   if p_patch ? 'menu' then
     update stalls set menu = nullif(trim(p_patch->>'menu'), '') where id = p_stall_id;   -- 길이는 테이블 규칙(100자)이 검사
+  end if;
+  if p_patch ? 'lat' or p_patch ? 'lng' then   -- {"lat": 37.5, "lng": 127.0} 가게 위치 고치기 (범위는 테이블 규칙이 검사)
+    if coalesce(jsonb_typeof(p_patch->'lat'), '') <> 'number' or coalesce(jsonb_typeof(p_patch->'lng'), '') <> 'number' then
+      raise exception 'bad location';
+    end if;
+    update stalls set lat = (p_patch->>'lat')::double precision, lng = (p_patch->>'lng')::double precision where id = p_stall_id;
   end if;
   if p_patch ? 'open' then
     if jsonb_typeof(p_patch->'open') <> 'boolean' then raise exception 'bad open'; end if;
