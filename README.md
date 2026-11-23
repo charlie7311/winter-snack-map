@@ -8,7 +8,8 @@
 - 사장님이 "이 가게 사장님이세요?"로 신청하고 관리자가 승인하면, "내 가게" 화면에서 영업중/영업 끝, 요일별 영업시간, 가격, 가게 위치를 직접 바꿀 수 있어요. 사장님 바로가기 링크로 다른 폰·브라우저에서도 들어올 수 있어요
 - 손님이 "잘못된 정보 신고"를 할 수 있고, 없어짐·가짜 신고가 3번 쌓이면 지도에서 자동으로 숨겨요
 - 가게를 등록할 때 30m 안에 같은 품목 가게가 있으면 중복인지 먼저 물어봐요
-- 사장님 신청이 오거나 가게가 신고로 숨겨지면 디스코드로 알림
+- 손님이 "위치가 틀려요"로 맞는 자리를 찍어 위치 수정을 제안하고, 관리자가 승인하면 반영돼요
+- 사장님 신청, 위치 수정 제안, 신고로 숨겨짐이 생기면 디스코드로 알림
 - 구청 허가 거리가게 공개자료(공공데이터포털, 동작·동대문·도봉·성북·송파)에서 겨울 간식·떡볶이·순대 품목이 적힌 노점 51곳을 골라 `data/public-stalls.json`에 넣었어요. 출처·기준일 표시, 좌표는 근사 위치
 
 ## 구조
@@ -20,6 +21,7 @@
 - `owners.sql` — 사장님 신청·승인·수정 기능. `stalls.sql` 다음에 실행
 - `moderation.sql` — 신고·자동 숨김, 손님이 등록할 때 보낼 수 있는 칸 제한. `categories.sql` 다음에 실행
 - `notify.sql` — 디스코드 알림. `owners.sql`, `moderation.sql` 다음에 실행
+- `suggestions.sql` — 손님 위치 수정 제안과 승인. `notify.sql` 다음에 실행
 - `public-stalls.sql` — 공개자료 가게를 stalls 테이블에도 넣어 사장님 신청이 되게 함. `owners.sql`, `categories.sql` 다음에 실행. `data/public-stalls.json`을 바꾸면 `node data/make-public-sql.js`로 다시 만들고 다시 실행
 - `data/public-stalls.json` — 구청 공개자료에서 고른 노점 (id 500~)
 
@@ -33,15 +35,19 @@ GitHub Pages (Settings → Pages → Branch: `main`, 폴더 `/`).
 
 ## 처음 설치 순서 (Supabase SQL Editor, 파일마다 New query로)
 
-`supabase.sql` → `stalls.sql` → `owners.sql` → `categories.sql` → `moderation.sql` → `notify.sql` → `public-stalls.sql`
+`supabase.sql` → `stalls.sql` → `owners.sql` → `categories.sql` → `moderation.sql` → `notify.sql` → `suggestions.sql` → `public-stalls.sql`
 
 ## 사장님 승인
 
 Supabase Table Editor > `owner_claims`에서 연락처로 사장님인지 확인하고 `approved`를 체크하면 돼요. 사장님은 신청한 브라우저에서 "내 가게"에 들어가고, "내 가게" 화면의 바로가기 링크를 열면 다른 폰·브라우저에서도 들어올 수 있어요.
 
+## 위치 수정 제안 승인
+
+Table Editor > `location_suggestions`에서 `approved`를 체크하면 그 가게 위치가 바로 바뀌어요. 디스코드 알림에 지금 위치와 제안 위치 지도 링크, 거리 차이가 같이 와요. 승인하지 않을 제안은 그냥 두거나 지우면 돼요.
+
 ## 신고로 숨겨진 가게
 
-- 신고 내용: Table Editor > `stall_flags` (gone 없어짐, fake 가짜, location 위치 틀림)
+- 신고 내용: Table Editor > `stall_flags` (gone 없어짐, fake 가짜)
 - 되살리기: `stalls`에서 그 가게의 `flag_count`를 0으로 바꾸고, `stall_flags`에서 그 가게 신고를 지우기
 - 아예 지우기: `stalls`에서 그 가게 줄을 지우면 신고·사장님 신청도 같이 지워져요
 

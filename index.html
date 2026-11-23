@@ -543,6 +543,7 @@ function render() {
     : `<div class="empty">조건에 맞는 가게가 없어요.</div>`);
   list.querySelectorAll(".card").forEach(el => el.addEventListener("click", () => select(+el.dataset.id, true)));
   list.querySelectorAll("details.flag").forEach(d => d.addEventListener("click", e => e.stopPropagation()));
+  list.querySelectorAll("[data-suggest]").forEach(b => b.addEventListener("click", () => startSuggest(+b.dataset.suggest)));
   list.querySelectorAll("[data-flag]").forEach(b => b.addEventListener("click", () => sendFlag(+b.dataset.flag, b.dataset.reason, b)));
   list.querySelectorAll("[data-claim]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); openOwner(+b.dataset.claim); }));
   list.querySelectorAll("[data-report]").forEach(b => b.addEventListener("click", async e => {
@@ -602,7 +603,7 @@ if (!REMOTE) {
   try { userStalls = JSON.parse(localStorage.getItem(LOCAL_STALLS_KEY)) || []; } catch { userStalls = []; }
   rebuildStalls();
 }
-let picking = false, picked = null, pickMarker = null, lastStallSent = 0, dupWarned = "", relocateId = null;
+let picking = false, picked = null, pickMarker = null, lastStallSent = 0, dupWarned = "", relocateId = null, suggestId = null;
 const DUP_METERS = 30;
 const $ = id => document.getElementById(id);
 const buildTypes = () => { $("fTypes").innerHTML = sortedCats().map(c => `<label><input type="checkbox" value="${c.key}">${c.e} ${c.key}</label>`).join(""); };
@@ -644,9 +645,12 @@ $("pickMine").addEventListener("click", () => {
   navigator.geolocation.getCurrentPosition(p => { map.setView([p.coords.latitude, p.coords.longitude], 17); onPick(p.coords.latitude, p.coords.longitude); },
     () => toast("위치 권한이 없어요. 지도를 눌러 주세요."));
 });
-const onPick = (lat, lng) => relocateId ? saveLocation(lat, lng) : setPicked(lat, lng);
+// 지도에서 자리 찍기는 세 가지로 씀: 새 가게 등록 / 사장님 위치 고치기 / 손님 위치 수정 제안
+const onPick = (lat, lng) => relocateId ? saveLocation(lat, lng) : suggestId ? sendSuggestion(lat, lng) : setPicked(lat, lng);
 function cancelPick() {
-  if (relocateId) { relocateId = null; stopPick(); openOwner(); } else closeForm();
+  if (relocateId) { relocateId = null; stopPick(); openOwner(); }
+  else if (suggestId) { suggestId = null; stopPick(); }
+  else closeForm();
 }
 map.on("click", e => { if (picking) onPick(e.latlng.lat, e.latlng.lng); });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && (picking || $("modal").classList.contains("show"))) cancelPick(); });
@@ -916,13 +920,15 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("owner"
 
 // ---- 잘못된 정보 신고: "없어짐"·"가짜" 신고가 서로 다른 브라우저에서 HIDE_FLAGS번 쌓이면 지도에서 숨겨요 ----
 // shortcut: 한 사람이 브라우저 기록을 지우고 다시 신고할 수는 있어요. 장난이 많아지면 로그인 신고로 바꿔요.
-const FLAG_KEY = "winter-snack-flags-v1", FLAG_REASONS = [["gone", "없어진 가게예요"], ["location", "위치가 틀려요"], ["fake", "장난·가짜 정보예요"]];
+const FLAG_KEY = "winter-snack-flags-v1";
 let myFlags = [];
 try { myFlags = JSON.parse(localStorage.getItem(FLAG_KEY)) || []; } catch {}
 function flagBox(s) {
   if (myFlags.includes(s.id)) return '<div class="flagged">🚩 신고했어요. 확인할게요.</div>';
   return '<details class="flag"><summary>🚩 잘못된 정보 신고</summary><div class="reasons">' +
-    FLAG_REASONS.map(([k, label]) => '<button data-flag="' + s.id + '" data-reason="' + k + '">' + label + '</button>').join("") + '</div></details>';
+    '<button data-flag="' + s.id + '" data-reason="gone">없어진 가게예요</button>' +
+    '<button data-suggest="' + s.id + '">위치가 틀려요</button>' +
+    '<button data-flag="' + s.id + '" data-reason="fake">장난·가짜 정보예요</button></div></details>';
 }
 async function sendFlag(id, reason, btn) {
   const me = browserKey("winter-snack-me-v1", true);
@@ -938,6 +944,27 @@ async function sendFlag(id, reason, btn) {
     console.warn("신고 실패", ex);
     btn.disabled = false;
     toast("신고하지 못했어요. 잠시 뒤 다시 시도해 주세요.");
+  }
+}
+
+// ---- 손님 위치 수정 제안: 관리자가 location_suggestions에서 승인하면 반영돼요 ----
+function startSuggest(id) {
+  const st = STALLS.find(x => x.id === id);
+  suggestId = id;
+  map.setView([st.lat, st.lng], 18);
+  startPick();
+  $("pickTitle").textContent = "📍 \"" + st.name + "\"의 정확한 자리를 지도에서 눌러 주세요";
+}
+async function sendSuggestion(lat, lng) {
+  const id = suggestId; suggestId = null; stopPick();
+  const me = browserKey("winter-snack-me-v1", true);
+  if (!me) { toast("이 브라우저는 저장이 막혀 있어서 보낼 수 없어요."); return; }
+  try {
+    await rpc("suggest_location", { p_stall_id: id, p_reporter: me, p_lat: +lat.toFixed(6), p_lng: +lng.toFixed(6) });
+    toast("고마워요! 확인한 뒤 지도에 반영할게요.");
+  } catch (ex) {
+    console.warn("위치 제안 실패", ex);
+    toast(String(ex).includes("too many") ? "이 가게에 확인 중인 제안이 많아요. 나중에 다시 보내 주세요." : "보내지 못했어요. 잠시 뒤 다시 시도해 주세요.");
   }
 }
 
