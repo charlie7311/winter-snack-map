@@ -213,6 +213,10 @@
     <input type="text" id="fArea" maxlength="40" placeholder="예: 서대문구 신촌">
     <label class="f">파는 것 * <span class="hint">(여러 개 골라도 돼요)</span></label>
     <div class="checks" id="fTypes"></div>
+    <div id="otherBox" hidden>
+      <label class="f" for="fOther">어떤 음식을 파나요? *</label>
+      <input type="text" id="fOther" maxlength="30" placeholder="예: 떡볶이, 꼬치어묵">
+    </div>
     <label class="f" for="fMenu">메뉴·가격</label>
     <input type="text" id="fMenu" maxlength="100" placeholder="예: 팥붕 3개 2,000원">
     <label class="f">결제</label>
@@ -245,6 +249,7 @@ const CATS = [
   { key: "군밤", e: "🌰" }, { key: "계란빵", e: "🥚" }, { key: "국화빵", e: "🌼" },
   { key: "어묵", e: "🍢" }, { key: "타코야끼", e: "🐙" }, { key: "델리만쥬", e: "🧁" },
   { key: "땅콩과자", e: "🥜" }, { key: "와플", e: "🧇" }, { key: "옥수수", e: "🌽" },
+  { key: "떡볶이", e: "🌶️" }, { key: "순대", e: "🌭" }, { key: "기타", e: "🍽️" },
 ];
 const EMOJI = Object.fromEntries(CATS.map(c => [c.key, c.e]));
 
@@ -354,7 +359,7 @@ async function fetchRemote() {
 }
 function rowToStall(r) {
   return { id: r.id, name: r.name, area: r.area || "", lat: r.lat, lng: r.lng, types: r.types,
-           menu: r.menu || "", pay: r.pay || "", hours: r.hours || null, createdAt: Date.parse(r.created_at),
+           menu: r.menu || "", otherFood: r.other_food || "", pay: r.pay || "", hours: r.hours || null, createdAt: Date.parse(r.created_at),
            ownerOpen: r.owner_open ?? null, ownerAt: r.owner_open_at ? Date.parse(r.owner_open_at) : null };
 }
 async function sendRemote(stallId, open) {
@@ -467,16 +472,25 @@ function reportBox(stall, st) {
   </div>`;
 }
 
+// 가게가 많은 품목부터 보여줘요. 개수가 같으면 원래 순서, 기타는 항상 맨 끝.
+function sortedCats() {
+  const n = {};
+  STALLS.forEach(s => s.types.forEach(t => { n[t] = (n[t] || 0) + 1; }));
+  return [...CATS].sort((a, b) => (a.key === "기타") - (b.key === "기타") || (n[b.key] || 0) - (n[a.key] || 0));
+}
+let catsOrder = "";
 function renderCats() {
-  const el = document.getElementById("cats");
+  const el = document.getElementById("cats"), cats = sortedCats();
+  catsOrder = cats.map(c => c.key).join();
   el.innerHTML = [`<button class="chip" data-type="all" aria-pressed="${filterType === "all"}">전체</button>`,
-    ...CATS.map(c => `<button class="chip" data-type="${c.key}" aria-pressed="${filterType === c.key}">${c.e} ${c.key}</button>`)].join("");
+    ...cats.map(c => `<button class="chip" data-type="${c.key}" aria-pressed="${filterType === c.key}">${c.e} ${c.key}</button>`)].join("");
   el.querySelectorAll("[data-type]").forEach(b => b.addEventListener("click", () => {
     filterType = b.dataset.type; renderCats(); render();
   }));
 }
 
 function render() {
+  if (sortedCats().map(c => c.key).join() !== catsOrder) renderCats();   // 가게가 불러와지거나 늘면 순서 다시
   const now = kstNow();
   const hh = String(Math.floor(now.min / 60)).padStart(2, "0"), mm = String(now.min % 60).padStart(2, "0");
   document.getElementById("now").textContent = `(지금 ${DAYS[now.day]}요일 ${hh}:${mm}, 한국 시간)`;
@@ -485,7 +499,7 @@ function render() {
   rows = rows.filter(({ s, st }) =>
     (filterType === "all" || s.types.includes(filterType)) &&
     (!openOnly || st.state !== "closed") &&
-    (!query || (s.name + s.area + s.menu + (s.address || "") + s.types.join("")).includes(query)));
+    (!query || (s.name + s.area + s.menu + (s.address || "") + s.types.join("") + (s.otherFood || "")).includes(query)));
   const rank = { open: 0, soon: 1, closed: 2 };
   rows.sort((a, b) => userPos ? a.d - b.d
     : rank[a.st.state] - rank[b.st.state] || (b.st.fresh - a.st.fresh) || a.s.name.localeCompare(b.s.name, "ko"));
@@ -507,7 +521,7 @@ function render() {
         <div class="top"><h3>${esc(s.name)}</h3><span class="badge ${st.state}">${st.text}</span></div>
         <div class="reportline ${st.fresh ? "" : "stale"}">${esc(st.report)}</div>
         <div class="meta">${esc(s.area)}${d != null ? ` · ${d < 1 ? Math.round(d * 1000) + "m" : d.toFixed(1) + "km"}` : ""}${s.menu ? `<br>${esc(s.menu)}` : ""}</div>
-        <div class="tags">${s.public ? `<span class="tag" title="구청 허가 거리가게 자료">📋 구청 자료 ${s.srcDate.slice(0, 7).replace("-", ".")}</span>` : ""}${s.createdAt && Date.now() - s.createdAt < 7 * 86400000 ? `<span class="tag new">새로 등록</span>` : ""}${s.types.map(t => `<span class="tag">${EMOJI[t] || ""} ${esc(t)}</span>`).join("")}${s.pay ? `<span class="tag">${esc(s.pay)}</span>` : ""}</div>
+        <div class="tags">${s.public ? `<span class="tag" title="구청 허가 거리가게 자료">📋 구청 자료 ${s.srcDate.slice(0, 7).replace("-", ".")}</span>` : ""}${s.createdAt && Date.now() - s.createdAt < 7 * 86400000 ? `<span class="tag new">새로 등록</span>` : ""}${s.types.map(t => `<span class="tag">${EMOJI[t] || ""} ${esc(t === "기타" && s.otherFood ? s.otherFood : t)}</span>`).join("")}${s.pay ? `<span class="tag">${esc(s.pay)}</span>` : ""}</div>
         <div class="detail">${s.public ? publicInfo(s) : ""}${hoursTable(s, now)}${reportBox(s, st)}${REMOTE && (!s.public || s.inDb) ? ownerLink(s) : ""}</div>
       </div>`).join("")
     : `<div class="empty">조건에 맞는 가게가 없어요.</div>`);
@@ -572,7 +586,10 @@ if (!REMOTE) {
 }
 let picking = false, picked = null, pickMarker = null, lastStallSent = 0;
 const $ = id => document.getElementById(id);
-$("fTypes").innerHTML = CATS.map(c => `<label><input type="checkbox" value="${c.key}">${c.e} ${c.key}</label>`).join("");
+const buildTypes = () => { $("fTypes").innerHTML = sortedCats().map(c => `<label><input type="checkbox" value="${c.key}">${c.e} ${c.key}</label>`).join(""); };
+buildTypes();
+const syncOther = () => { $("otherBox").hidden = !$("fTypes").querySelector('input[value="기타"]').checked; };
+$("fTypes").addEventListener("change", syncOther);
 $("fOff").innerHTML = [1,2,3,4,5,6,0].map(d => `<label><input type="checkbox" value="${d}">${DAYS[d]}</label>`).join("");
 $("stallForm").addEventListener("input", () => { $("fErr").textContent = ""; });
 $("fNoHours").addEventListener("change", e => { $("hoursBox").style.display = e.target.checked ? "none" : ""; });
@@ -598,7 +615,7 @@ function closeForm() {
   $("modal").classList.remove("show"); stopPick();
   if (pickMarker) { map.removeLayer(pickMarker); pickMarker = null; }
 }
-$("addStall").addEventListener("click", startPick);
+$("addStall").addEventListener("click", () => { buildTypes(); $("otherBox").hidden = true; startPick(); });
 $("pickCancel").addEventListener("click", closeForm);
 $("fCancel").addEventListener("click", closeForm);
 $("fRepick").addEventListener("click", startPick);
@@ -613,8 +630,10 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && (picking |
 function readForm() {
   const name = $("fName").value.trim();
   const types = [...$("fTypes").querySelectorAll("input:checked")].map(i => i.value);
+  const otherFood = $("fOther").value.trim();
   if (name.length < 2) return { err: "가게 이름을 2글자 이상 적어 주세요." };
   if (!types.length) return { err: "파는 것을 하나 이상 골라 주세요." };
+  if (types.includes("기타") && !otherFood) return { err: "기타를 골랐다면 어떤 음식을 파는지 적어 주세요." };
   if (!picked) return { err: "위치를 먼저 찍어 주세요." };
   if (picked.lat < 33 || picked.lat > 39 || picked.lng < 124 || picked.lng > 132) return { err: "지금은 국내 가게만 등록할 수 있어요." };
   let hours = null;
@@ -628,6 +647,7 @@ function readForm() {
   return { row: {
     name, area: $("fArea").value.trim() || null, lat: +picked.lat.toFixed(6), lng: +picked.lng.toFixed(6), types,
     menu: $("fMenu").value.trim() || null,
+    ...(types.includes("기타") ? { other_food: otherFood } : {}),   // 기타가 아닐 땐 칸을 아예 안 보냄
     pay: [...$("fPay").querySelectorAll("input:checked")].map(i => i.value).join("·") || null,
     hours,
   } };
@@ -655,7 +675,7 @@ $("stallForm").addEventListener("submit", async e => {
     lastStallSent = Date.now();
     userStalls = [stall, ...userStalls.filter(x => x.id !== stall.id)];
     rebuildStalls();
-    $("stallForm").reset(); $("hoursBox").style.display = "";
+    $("stallForm").reset(); syncOther(); $("hoursBox").style.display = "";
     closeForm();
     filterType = "all"; renderCats();
     activeId = stall.id; render();
