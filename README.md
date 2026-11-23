@@ -14,6 +14,7 @@
 - `supabase.sql` — 제보 테이블과 보안 규칙. Supabase SQL Editor에서 실행
 - `stalls.sql` — 손님이 등록하는 가게 테이블과 보안 규칙
 - `owners.sql` — 사장님 신청·승인·수정 기능. `stalls.sql` 다음에 실행
+- `public-stalls.sql` — 공개자료 가게를 stalls 테이블에도 넣어 사장님 신청이 되게 함. `owners.sql` 다음에 실행. `data/public-stalls.json`을 바꾸면 다시 만들어야 해요
 - `data/public-stalls.json` — 구청 공개자료에서 고른 노점 (id 500~)
 
 ## 제보 공유 켜기

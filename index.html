@@ -249,7 +249,17 @@ let userStalls = [];               // 손님이 등록한 가게 (서버 또는 
 let publicStalls = [];             // 구청 공개 데이터 (data/public-stalls.json)
 let PUBLIC_SOURCES = {};
 let STALLS = [];
-function rebuildStalls() { STALLS = [...userStalls, ...publicStalls]; }
+// 공개자료 가게도 서버(stalls 테이블, public-stalls.sql)에 같은 id로 들어 있으면
+// 출처 정보는 JSON 것을 쓰고, 사장님이 바꾸는 영업시간·가격·영업 상태는 서버 값을 써요.
+function rebuildStalls() {
+  const db = new Map(userStalls.map(s => [s.id, s]));
+  const merged = publicStalls.map(p => {
+    const d = db.get(p.id);
+    return d ? { ...p, inDb: true, hours: d.hours, menu: d.menu, ownerOpen: d.ownerOpen, ownerAt: d.ownerAt } : p;
+  });
+  const publicIds = new Set(publicStalls.map(p => p.id));
+  STALLS = [...userStalls.filter(s => !publicIds.has(s.id)), ...merged];
+}
 async function loadPublic() {
   try {
     const j = await fetch("data/public-stalls.json", { cache: "no-cache" }).then(r => r.json());
@@ -494,7 +504,7 @@ function render() {
         <div class="reportline ${st.fresh ? "" : "stale"}">${esc(st.report)}</div>
         <div class="meta">${esc(s.area)}${d != null ? ` · ${d < 1 ? Math.round(d * 1000) + "m" : d.toFixed(1) + "km"}` : ""}${s.menu ? `<br>${esc(s.menu)}` : ""}</div>
         <div class="tags">${s.public ? `<span class="tag" title="구청 허가 거리가게 자료">📋 구청 자료 ${s.srcDate.slice(0, 7).replace("-", ".")}</span>` : ""}${s.createdAt && Date.now() - s.createdAt < 7 * 86400000 ? `<span class="tag new">새로 등록</span>` : ""}${s.types.map(t => `<span class="tag">${EMOJI[t] || ""} ${esc(t)}</span>`).join("")}${s.pay ? `<span class="tag">${esc(s.pay)}</span>` : ""}</div>
-        <div class="detail">${s.public ? publicInfo(s) : ""}${hoursTable(s, now)}${reportBox(s, st)}${REMOTE && !s.public ? ownerLink(s) : ""}</div>
+        <div class="detail">${s.public ? publicInfo(s) : ""}${hoursTable(s, now)}${reportBox(s, st)}${REMOTE && (!s.public || s.inDb) ? ownerLink(s) : ""}</div>
       </div>`).join("")
     : `<div class="empty">조건에 맞는 가게가 없어요.</div>`);
   list.querySelectorAll(".card").forEach(el => el.addEventListener("click", () => select(+el.dataset.id, true)));
