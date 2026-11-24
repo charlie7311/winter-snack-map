@@ -383,8 +383,8 @@ function rowToStall(r) {
            flagCount: r.flag_count || 0 };
 }
 async function sendRemote(stallId, open, pos) {
-  // 가게 500m 안에서만, 같은 IP는 한 가게에 10분에 1번 (security.sql)
-  await rpc("add_report", { p_stall_id: stallId, p_is_open: open, p_lat: pos.lat, p_lng: pos.lng });
+  // 가게 500m 안에서만, 한 브라우저는 한 가게에 10분에 1번 (security.sql)
+  await rpc("add_report", { p_stall_id: stallId, p_is_open: open, p_lat: pos.lat, p_lng: pos.lng, p_key: browserKey("winter-snack-me-v1", true) });
 }
 // 폰 위치 받기. 실패하면 사용자에게 보여줄 문장을 담아 reject
 const REPORT_RADIUS_M = 500, SUGGEST_RADIUS_M = 200;   // security.sql, suggestions.sql과 같은 숫자
@@ -578,7 +578,7 @@ function render() {
       const far = distKm(pos, stall) * 1000;
       if (far > REPORT_RADIUS_M) { delete lastSent[id]; toast(`가게 근처(${REPORT_RADIUS_M}m 안)에서만 알려 줄 수 있어요. 지금 약 ${fmtDist(far)} 떨어져 있어요.`); return; }
       try { await sendRemote(id, open, pos); (remoteReports[id] = remoteReports[id] || []).push({ open, at: Date.now() }); }
-      catch (ex) { delete lastSent[id]; toast(isRateLimited(ex) ? "이 가게는 조금 전에 제보했어요. 10분 뒤에 다시 알려 주세요." : isTooFar(ex) ? `가게 근처(${REPORT_RADIUS_M}m 안)에서만 알려 줄 수 있어요.` : "제보를 보내지 못했어요. 잠시 뒤 다시 시도해 주세요."); return; }
+      catch (ex) { delete lastSent[id]; toast(isRateLimited(ex) ? "조금 전에 제보가 들어왔어요. 10분 뒤에 다시 알려 주세요." : isTooFar(ex) ? `가게 근처(${REPORT_RADIUS_M}m 안)에서만 알려 줄 수 있어요.` : "제보를 보내지 못했어요. 잠시 뒤 다시 시도해 주세요."); return; }
     } else {
       (myReports[id] = myReports[id] || []).push({ open, at: Date.now() });
       saveMine(myReports);
@@ -723,7 +723,7 @@ $("stallForm").addEventListener("submit", async e => {
     let stall;
     if (REMOTE) {
       // 새 가게는 관리자 승인 뒤에 지도에 올라가요 (security.sql의 add_stall)
-      await rpc("add_stall", { p: row });
+      await rpc("add_stall", { p: row, p_key: browserKey("winter-snack-me-v1", true) });
       lastStallSent = Date.now();
       $("stallForm").reset(); syncOther(); $("hoursBox").style.display = "";
       closeForm();
@@ -816,8 +816,8 @@ function claimView(id) {
       <input type="tel" id="cContact" maxlength="60" placeholder="010-1234-5678" autocomplete="tel">
       <label class="f" for="cNote">한마디 (선택)</label>
       <textarea id="cNote" maxlength="200" placeholder="예: 평일 오후에 연락 주세요"></textarea>
-      <p>연락처는 사장님이 맞는지 확인하는 데만 쓰고, 확인이 끝나면 지워요. 다른 사람에게 보이거나 다른 곳에 쓰이지 않아요.</p>
-      <label class="consent"><input type="checkbox" id="cAgree"> 연락처 수집·이용에 동의해요</label>
+      <p>연락처와 한마디는 사장님이 맞는지 확인하는 데만 쓰고 운영자만 볼 수 있어요. 승인되면 자동으로 지워지고, 승인되지 않은 신청은 운영자가 확인한 뒤 지워요.</p>
+      <label class="consent"><input type="checkbox" id="cAgree"> 연락처와 한마디 수집·이용에 동의해요</label>
       <div class="err" id="cErr"></div>
       <button class="big save" type="submit" id="cSubmit">사장님 신청하기</button>
     </form>`;

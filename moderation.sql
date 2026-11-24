@@ -18,7 +18,7 @@ alter table public.stalls add constraint stalls_flag_count_check check (flag_cou
 create table if not exists public.stall_flags (
   id             bigint generated always as identity primary key,
   stall_id       bigint not null references public.stalls(id) on delete cascade,
-  reporter_hash  text   not null,     -- 신고한 사람의 IP sha256 (IP 원문은 저장 안 함). 같은 IP는 한 가게에 한 번만
+  reporter_hash  text   not null,     -- 비밀 값을 섞은 IP 해시 (30일 지나면 다음 신고 때 지움). 같은 IP는 한 가게에 한 번만
   reason         text   not null check (reason in ('gone', 'fake', 'location')),
   created_at     timestamptz not null default now(),
   unique (stall_id, reporter_hash)
@@ -26,14 +26,18 @@ create table if not exists public.stall_flags (
 alter table public.stall_flags enable row level security;   -- 정책 없음 = 밖에서 직접 못 읽고 못 씀
 revoke all on public.stall_flags from anon, authenticated;
 
+-- 비밀 값 없이 저장했던 예전 해시는 지워요 (신고 수는 그대로)
+update public.stall_flags set reporter_hash = 'old-' || id where reporter_hash not like 'ip:%' and reporter_hash not like 'old-%';
+
 create or replace function public.flag_stall(p_stall_id bigint, p_reporter text, p_reason text)
 returns void language plpgsql security definer set search_path = public as $$
 begin
   if p_reason not in ('gone', 'fake', 'location') then raise exception 'bad reason'; end if;
   if not exists (select 1 from stalls where id = p_stall_id) then raise exception 'no such stall'; end if;
-  perform private.hit('flag', 20, interval '1 hour');   -- IP당 1시간 20번 (security.sql)
+  perform private.hit('flag', p_reporter, 20, 200, interval '1 hour');   -- 1시간에 브라우저당 20번, IP당 200번 (security.sql)
+  update stall_flags set reporter_hash = 'old-' || id where created_at < now() - interval '30 days' and reporter_hash like 'ip:%';
   insert into stall_flags (stall_id, reporter_hash, reason)
-  values (p_stall_id, _token_hash(private.client_ip()), p_reason)   -- p_reporter는 예전 화면 호환용으로만 받음
+  values (p_stall_id, private.ip_hash(), p_reason)   -- 숨김은 IP가 다른 사람만 셈 (키만 바꿔 숨기지 못하게)
   on conflict (stall_id, reporter_hash) do nothing;
   if found and p_reason in ('gone', 'fake') then
     update stalls set flag_count = flag_count + 1 where id = p_stall_id;

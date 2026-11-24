@@ -32,15 +32,27 @@ returns void language plpgsql security definer set search_path = public as $$
 begin
   if p_token is null or char_length(p_token) < 32 or char_length(p_token) > 100 then raise exception 'bad token'; end if;
   if not exists (select 1 from stalls where id = p_stall_id) then raise exception 'no such stall'; end if;
-  perform private.hit('claim', 5, interval '1 hour');   -- IP당 1시간 5번 (security.sql)
+  perform private.hit('claim', p_token, 5, 30, interval '1 hour');   -- 1시간에 브라우저당 5번, IP당 30번 (security.sql)
   -- 장난 신청이 쌓이지 않게: 승인 안 된 신청은 가게당 5개까지
   if (select count(*) from owner_claims where stall_id = p_stall_id and not approved) >= 5 then
     raise exception 'too many pending claims';
   end if;
   insert into owner_claims (stall_id, token_hash, contact, note)
   values (p_stall_id, _token_hash(p_token), trim(p_contact), nullif(trim(p_note), ''))
-  on conflict (stall_id, token_hash) do update set contact = excluded.contact, note = excluded.note;
+  on conflict (stall_id, token_hash) do update set contact = excluded.contact, note = excluded.note
+    where not owner_claims.approved;   -- 승인된 뒤에는 지운 연락처가 다시 채워지지 않게
 end $$;
+
+-- 승인하는 순간 연락처와 메모를 지워요 (신청 화면에서 약속한 내용)
+create or replace function public.clear_claim_contact() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.approved and not old.approved then new.contact := '확인 완료'; new.note := null; end if;
+  return new;
+end $$;
+drop trigger if exists owner_claim_clear_contact on public.owner_claims;
+create trigger owner_claim_clear_contact before update on public.owner_claims
+  for each row execute function public.clear_claim_contact();
 
 -- 이 키로 신청한 가게와 승인 여부
 create or replace function public.owner_stalls(p_token text)

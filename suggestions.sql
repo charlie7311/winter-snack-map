@@ -27,7 +27,7 @@ begin
   if p_my_lat is null or p_my_lng is null or meters(p_my_lat, p_my_lng, p_lat, p_lng) > 200 then raise exception 'too far'; end if;
   if p_reporter is null or char_length(p_reporter) < 32 or char_length(p_reporter) > 100 then raise exception 'bad reporter'; end if;
   if not exists (select 1 from stalls where id = p_stall_id) then raise exception 'no such stall'; end if;
-  perform private.hit('suggest', 10, interval '1 hour');   -- IP당 1시간 10번 (security.sql)
+  perform private.hit('suggest', p_reporter, 10, 100, interval '1 hour');   -- 1시간에 브라우저당 10번, IP당 100번 (security.sql)
   -- 장난이 쌓이지 않게: 확인 안 된 제안은 가게당 10개까지 (같은 사람이 다시 보내는 건 괜찮음)
   if (select count(*) from location_suggestions
       where stall_id = p_stall_id and not approved and reporter_hash <> _token_hash(p_reporter)) >= 10 then

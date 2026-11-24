@@ -23,7 +23,7 @@ begin
   if url is null then return; end if;
   perform net.http_post(
     url     := url,
-    body    := jsonb_build_object('content', left(p_text, 1900)),
+    body    := jsonb_build_object('content', left(p_text, 1900), 'allowed_mentions', '{"parse": []}'::jsonb),
     headers := '{"Content-Type": "application/json"}'::jsonb
   );
 exception when others then
@@ -34,9 +34,9 @@ end $$;
 create or replace function private.on_owner_claim() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  perform private.notify(format(E'🧑‍🍳 사장님 신청: %s (가게 번호 %s)\n연락처: %s%s\n승인: Supabase Table Editor > owner_claims 에서 approved 체크',
-    (select name from stalls where id = new.stall_id), new.stall_id, new.contact,
-    coalesce(E'\n메모: ' || new.note, '')));
+  -- 연락처와 메모는 개인정보라 디스코드로 보내지 않아요
+  perform private.notify(format(E'🧑‍🍳 사장님 신청: %s (가게 번호 %s)\n연락처 확인과 승인: Supabase Table Editor > owner_claims',
+    (select name from stalls where id = new.stall_id), new.stall_id));
   return new;
 end $$;
 drop trigger if exists owner_claim_notify on public.owner_claims;
