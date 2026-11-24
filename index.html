@@ -46,7 +46,7 @@
     border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 14px;
   }
   main { flex: 1; display: flex; min-height: 0; }
-  #map { flex: 1.4; min-height: 300px; }
+  #map { flex: 1.4; min-height: 300px; position: relative; }  /* 없으면 좁은 화면에서 열고 넓힐 때 지도가 static이 되어 화면을 덮음 */
   #list { flex: 1; overflow-y: auto; border-left: 1px solid var(--line); background: var(--panel); }
   /* 폰: 페이지 전체가 스크롤되고, 지도는 위에 붙어 있고, 가게 목록은 그 아래로 길게 이어져요 */
   @media (max-width: 760px) {
