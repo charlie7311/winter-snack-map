@@ -1,5 +1,5 @@
 -- 겨울 간식 지도: 손님의 가게 위치 수정 제안 → 관리자 승인 → 위치 반영
--- Supabase SQL Editor에 통째로 붙여넣고 Run. moderation.sql, notify.sql 다음에 실행. 여러 번 실행해도 괜찮아요.
+-- Supabase SQL Editor에 통째로 붙여넣고 Run. security.sql, moderation.sql, notify.sql 다음에 실행. 여러 번 실행해도 괜찮아요.
 --
 -- 승인하는 법: Table Editor > location_suggestions 에서 approved를 체크(true)하면 그 가게 위치가 바로 바뀌어요.
 -- 디스코드 알림에 지금 위치·제안 위치 지도 링크가 같이 와요. 승인하지 않을 제안은 그냥 두거나 지우면 돼요.
@@ -18,11 +18,16 @@ create table if not exists public.location_suggestions (
 alter table public.location_suggestions enable row level security;   -- 정책 없음 = 밖에서 직접 못 읽고 못 씀
 revoke all on public.location_suggestions from anon, authenticated;
 
-create or replace function public.suggest_location(p_stall_id bigint, p_reporter text, p_lat double precision, p_lng double precision)
+-- 제안하는 자리는 지금 내 위치(폰)에서 200m 안이어야 해요 (가게 앞에서 "여기예요" 하고 찍는 방식)
+drop function if exists public.suggest_location(bigint, text, double precision, double precision);
+create or replace function public.suggest_location(p_stall_id bigint, p_reporter text, p_lat double precision, p_lng double precision,
+                                                   p_my_lat double precision, p_my_lng double precision)
 returns void language plpgsql security definer set search_path = public as $$
 begin
+  if p_my_lat is null or p_my_lng is null or meters(p_my_lat, p_my_lng, p_lat, p_lng) > 200 then raise exception 'too far'; end if;
   if p_reporter is null or char_length(p_reporter) < 32 or char_length(p_reporter) > 100 then raise exception 'bad reporter'; end if;
   if not exists (select 1 from stalls where id = p_stall_id) then raise exception 'no such stall'; end if;
+  perform private.hit('suggest', 10, interval '1 hour');   -- IP당 1시간 10번 (security.sql)
   -- 장난이 쌓이지 않게: 확인 안 된 제안은 가게당 10개까지 (같은 사람이 다시 보내는 건 괜찮음)
   if (select count(*) from location_suggestions
       where stall_id = p_stall_id and not approved and reporter_hash <> _token_hash(p_reporter)) >= 10 then
@@ -33,8 +38,8 @@ begin
   on conflict (stall_id, reporter_hash) do update
     set lat = excluded.lat, lng = excluded.lng, created_at = now(), approved = false, applied_at = null;
 end $$;
-revoke all on function public.suggest_location(bigint, text, double precision, double precision) from public;
-grant execute on function public.suggest_location(bigint, text, double precision, double precision) to anon, authenticated;
+revoke all on function public.suggest_location(bigint, text, double precision, double precision, double precision, double precision) from public;
+grant execute on function public.suggest_location(bigint, text, double precision, double precision, double precision, double precision) to anon, authenticated;
 
 -- 승인(approved: false → true)하면 가게 위치에 반영
 create or replace function public.apply_location_suggestion() returns trigger

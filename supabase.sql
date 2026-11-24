@@ -10,12 +10,12 @@ create table if not exists public.reports (
 
 create index if not exists reports_created_at_idx on public.reports (created_at desc);
 
--- 행 단위 보안: 누구나(로그인 없이) 최근 제보를 읽고, 새 제보를 남길 수 있음.
+-- 행 단위 보안: 누구나(로그인 없이) 최근 제보를 읽을 수 있음. 제보 남기기는 security.sql의 add_report 함수로만 (IP별 횟수 제한).
 -- 수정·삭제는 아무도 못 함(관리자는 대시보드에서 가능).
 alter table public.reports enable row level security;
 
--- 새 Supabase 프로젝트는 테이블 권한을 자동으로 주지 않아서 직접 허용해요(읽기·쓰기만).
-grant select, insert on public.reports to anon;
+-- 새 Supabase 프로젝트는 테이블 권한을 자동으로 주지 않아서 직접 허용해요(읽기만).
+grant select on public.reports to anon;
 
 drop policy if exists "read recent reports" on public.reports;
 create policy "read recent reports" on public.reports
@@ -23,9 +23,3 @@ create policy "read recent reports" on public.reports
   using (created_at > now() - interval '2 days');
 
 drop policy if exists "anyone can report" on public.reports;
-create policy "anyone can report" on public.reports
-  for insert to anon
-  with check (created_at > now() - interval '1 minute' and created_at < now() + interval '1 minute');
-
--- 참고: 지금은 장난 제보를 브라우저에서 1분 간격으로만 막고 있어요.
--- 사용자가 늘면 IP별 제한(Edge Function)이나 로그인 제보를 추가하는 게 좋아요.

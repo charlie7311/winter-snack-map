@@ -76,6 +76,7 @@
   .hours tr.today td { color: var(--text); font-weight: 600; }
   .report-box { margin-top: 10px; padding: 10px; border: 1px dashed var(--line); border-radius: 10px; background: var(--panel); }
   .report-box .q { font-size: 13px; margin-bottom: 6px; }
+  .report-box .hint { color: var(--muted); font-size: 12px; }
   .report-box button {
     border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font-size: 13px; cursor: pointer;
     background: var(--bg); color: var(--text); margin-right: 6px;
@@ -169,6 +170,8 @@
   #owner .linkrow { display: flex; gap: 8px; align-items: center; }
   #owner .linkrow input { flex: 1; min-width: 0; }
   #owner .warn { color: #c0392b; font-weight: 600; }
+  #owner .consent { display: flex; gap: 8px; align-items: center; font-size: 16px; margin-top: 8px; }
+  #owner .consent input { width: 22px; height: 22px; }
   /* ---- 신고 ---- */
   details.flag { margin-top: 8px; font-size: 13px; }
   details.flag summary { color: var(--muted); cursor: pointer; padding: 4px 0; width: fit-content; }
@@ -194,7 +197,7 @@
   <div id="map"></div>
   <section id="list"></section>
 </main>
-<footer>가게 정보: 손님 등록 + 구청 허가 거리가게 공개자료(<a href="https://www.data.go.kr" target="_blank" rel="noopener">공공데이터포털</a>). 아는 노점이 있으면 ＋ 가게 등록으로 알려 주세요. 영업 여부는 사장님·손님이 알려 준 상태를 우선으로 보여주고, 없으면 등록된 영업시간으로 추정해요. 사장님이시면 가게를 눌러 "이 가게 사장님이세요?"로 신청해 주세요.</footer>
+<footer>가게 정보: 손님 등록 + 구청 허가 거리가게 공개자료(<a href="https://www.data.go.kr" target="_blank" rel="noopener">공공데이터포털</a>). 아는 노점이 있으면 ＋ 가게 등록으로 알려 주세요(확인 후 지도에 올라가요). 영업 여부는 사장님·손님이 알려 준 상태를 우선으로 보여주고, 없으면 등록된 영업시간으로 추정해요. 사장님이시면 가게를 눌러 "이 가게 사장님이세요?"로 신청해 주세요.</footer>
 <div id="toast"></div>
 
 <div id="owner" hidden role="dialog" aria-modal="true" aria-labelledby="ownerTitle">
@@ -288,7 +291,7 @@ async function loadPublic() {
     PUBLIC_SOURCES = j.sources || {};
     publicStalls = (j.stalls || []).map(s => ({
       ...s, public: true,
-      hours: typeof s.hours === "string" ? [0,1,2,3,4,5,6].map(() => s.hours.split("-")) : s.hours,
+      hours: (h => validHours(h) ? h : null)(typeof s.hours === "string" ? [0,1,2,3,4,5,6].map(() => s.hours.split("-")) : s.hours),
     }));
     rebuildStalls();
   } catch (e) { console.warn("공개 데이터 불러오기 실패", e); }
@@ -364,27 +367,40 @@ async function fetchRemote() {
     remoteReports = next;
   } catch (e) { console.warn("제보 불러오기 실패", e); }
   try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/stalls?select=*&order=created_at.desc&limit=2000`, { headers: authHeaders() });
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/stalls?select=id,name,area,lat,lng,types,menu,pay,hours,other_food,created_at,owner_open,owner_open_at,flag_count&order=created_at.desc&limit=2000`, { headers: authHeaders() });
     if (!r.ok) throw new Error(r.status);
     userStalls = (await r.json()).map(rowToStall);
     rebuildStalls();
   } catch (e) { console.warn("가게 불러오기 실패", e); }
 }
+// 영업시간이 [일~토 7칸, 각 칸 null 또는 ["HH:MM","HH:MM"]] 모양이 아니면 버려요 (서버 검사와 같은 규칙, 화면이 멈추지 않게)
+const HHMM = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+const validHours = h => Array.isArray(h) && h.length === 7 && h.every(d => d === null || (Array.isArray(d) && d.length === 2 && HHMM.test(d[0]) && HHMM.test(d[1]) && d[0] !== d[1]));
 function rowToStall(r) {
   return { id: r.id, name: r.name, area: r.area || "", lat: r.lat, lng: r.lng, types: r.types,
-           menu: r.menu || "", otherFood: r.other_food || "", pay: r.pay || "", hours: r.hours || null, createdAt: Date.parse(r.created_at),
+           menu: r.menu || "", otherFood: r.other_food || "", pay: r.pay || "", hours: validHours(r.hours) ? r.hours : null, createdAt: Date.parse(r.created_at),
            ownerOpen: r.owner_open ?? null, ownerAt: r.owner_open_at ? Date.parse(r.owner_open_at) : null,
            flagCount: r.flag_count || 0 };
 }
-async function sendRemote(stallId, open) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/reports`, {
-    method: "POST",
-    headers: { ...authHeaders(),
-               "Content-Type": "application/json", Prefer: "return=minimal" },
-    body: JSON.stringify({ stall_id: stallId, is_open: open }),
-  });
-  if (!r.ok) throw new Error(r.status);
+async function sendRemote(stallId, open, pos) {
+  // 가게 500m 안에서만, 같은 IP는 한 가게에 10분에 1번 (security.sql)
+  await rpc("add_report", { p_stall_id: stallId, p_is_open: open, p_lat: pos.lat, p_lng: pos.lng });
 }
+// 폰 위치 받기. 실패하면 사용자에게 보여줄 문장을 담아 reject
+const REPORT_RADIUS_M = 500, SUGGEST_RADIUS_M = 200;   // security.sql, suggestions.sql과 같은 숫자
+function getMyPos() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error("이 브라우저는 위치 기능이 없어서 제보할 수 없어요."));
+    navigator.geolocation.getCurrentPosition(
+      p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      e => reject(new Error(e.code === 1 ? "위치 권한을 허용해야 알려 줄 수 있어요. 브라우저 설정에서 위치를 허용해 주세요." : "지금 위치를 확인하지 못했어요. 잠시 뒤 다시 시도해 주세요.")),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+  });
+}
+const fmtDist = m => m < 1000 ? Math.round(m) + "m" : (m / 1000).toFixed(1) + "km";
+const isTooFar = ex => String(ex).includes("too far");
+const isRateLimited = ex => String(ex).includes("rate limited");
+const TOO_MANY = "요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.";
 
 const FRESH_MIN = 120;  // 이 시간 안의 제보는 영업시간보다 우선
 const OWNER_FRESH_MIN = 12 * 60;
@@ -440,8 +456,10 @@ function status(stall, now) {
 
 // ---- 지도 ----
 const map = L.map("map", { zoomControl: true }).setView([37.545, 126.98], 12);
+// shortcut: OpenStreetMap 공식 지도 서버는 사용량이 많은 서비스엔 쓰지 말라는 정책이 있어요.
+// 사람이 많이 몰리면 키를 받는 지도(Stadia·MapTiler·VWorld 등)로 이 줄만 바꿔요.
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+  maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
 }).addTo(map);
 
 const markers = {};
@@ -464,7 +482,7 @@ function hoursTable(stall, now) {
   if (!stall.hours) return `<div class="hours">영업시간 정보가 없어요. 가게 앞이라면 아래에서 영업 여부를 알려 주세요.</div>`;
   return `<table class="hours">` + [1,2,3,4,5,6,0].map(d => {
     const h = stall.hours[d];
-    return `<tr class="${d === now.day ? "today" : ""}"><td>${DAYS[d]}</td><td>${h ? h[0] + " – " + h[1] : "휴무"}</td></tr>`;
+    return `<tr class="${d === now.day ? "today" : ""}"><td>${DAYS[d]}</td><td>${h ? esc(h[0]) + " – " + esc(h[1]) : "휴무"}</td></tr>`;
   }).join("") + "</table>";
 }
 function publicInfo(s) {
@@ -479,7 +497,7 @@ function publicInfo(s) {
 function reportBox(stall, st) {
   const recent = reportsFor(stall.id).slice(0, 4);
   return `<div class="report-box">
-    <div class="q">지금 이 가게 앞이세요? 영업 여부를 알려주세요.</div>
+    <div class="q">지금 이 가게 앞이세요? 영업 여부를 알려주세요. <span class="hint">(가게 근처에서만, 위치 권한 필요)</span></div>
     <button class="yes" data-report="${stall.id}" data-open="1">🟢 지금 열려 있어요</button>
     <button class="no" data-report="${stall.id}" data-open="0">⚪ 지금 닫혀 있어요</button>
     ${recent.length ? `<ul>${recent.map(r => `<li>${ago(r.at)} · ${r.open ? "열림" : "닫힘"}</li>`).join("")}</ul>` : ""}
@@ -524,7 +542,7 @@ function render() {
   for (const k in markers) delete markers[k];
   rows.forEach(({ s, st }) => {
     const m = markers[s.id] = L.marker([s.lat, s.lng], { icon: icon(s, st) }).addTo(map);
-    m.bindPopup(`<b>${esc(s.name)}</b><br>${st.text}<br><small>${esc(st.report)}</small><br><small>${esc(s.menu)}</small>`);
+    m.bindPopup(`<b>${esc(s.name)}</b><br>${esc(st.text)}<br><small>${esc(st.report)}</small><br><small>${esc(s.menu)}</small>`);
     m.on("click", () => select(s.id, false));
   });
 
@@ -534,7 +552,7 @@ function render() {
   list.innerHTML = `<div class="summary">${label}${rows.length}곳 중 ${openCount}곳 영업중${userPos ? " · 가까운 순" : ""}</div>` +
     (rows.length ? rows.map(({ s, st, d }) => `
       <div class="card ${s.id === activeId ? "active" : ""}" data-id="${s.id}">
-        <div class="top"><h3>${esc(s.name)}</h3><span class="badge ${st.state}">${st.text}</span></div>
+        <div class="top"><h3>${esc(s.name)}</h3><span class="badge ${st.state}">${esc(st.text)}</span></div>
         <div class="reportline ${st.fresh ? "" : "stale"}">${esc(st.report)}</div>
         <div class="meta">${esc(s.area)}${d != null ? ` · ${d < 1 ? Math.round(d * 1000) + "m" : d.toFixed(1) + "km"}` : ""}${s.menu ? `<br>${esc(s.menu)}` : ""}</div>
         <div class="tags">${s.public ? `<span class="tag" title="구청 허가 거리가게 자료">📋 구청 자료 ${s.srcDate.slice(0, 7).replace("-", ".")}</span>` : ""}${s.createdAt && Date.now() - s.createdAt < 7 * 86400000 ? `<span class="tag new">새로 등록</span>` : ""}${s.types.map(t => `<span class="tag">${EMOJI[t] || ""} ${esc(t === "기타" && s.otherFood ? s.otherFood : t)}</span>`).join("")}${s.pay ? `<span class="tag">${esc(s.pay)}</span>` : ""}</div>
@@ -553,8 +571,14 @@ function render() {
     if (last && Date.now() - last < 60 * 1000) { toast("같은 가게는 1분에 한 번만 제보할 수 있어요."); return; }
     lastSent[id] = Date.now();
     if (REMOTE) {
-      try { await sendRemote(id, open); (remoteReports[id] = remoteReports[id] || []).push({ open, at: Date.now() }); }
-      catch { delete lastSent[id]; toast("제보를 보내지 못했어요. 잠시 뒤 다시 시도해 주세요."); return; }
+      const stall = STALLS.find(x => x.id === id);
+      let pos;
+      toast("위치를 확인하고 있어요…");
+      try { pos = await getMyPos(); } catch (ex) { delete lastSent[id]; toast(ex.message); return; }
+      const far = distKm(pos, stall) * 1000;
+      if (far > REPORT_RADIUS_M) { delete lastSent[id]; toast(`가게 근처(${REPORT_RADIUS_M}m 안)에서만 알려 줄 수 있어요. 지금 약 ${fmtDist(far)} 떨어져 있어요.`); return; }
+      try { await sendRemote(id, open, pos); (remoteReports[id] = remoteReports[id] || []).push({ open, at: Date.now() }); }
+      catch (ex) { delete lastSent[id]; toast(isRateLimited(ex) ? "이 가게는 조금 전에 제보했어요. 10분 뒤에 다시 알려 주세요." : isTooFar(ex) ? `가게 근처(${REPORT_RADIUS_M}m 안)에서만 알려 줄 수 있어요.` : "제보를 보내지 못했어요. 잠시 뒤 다시 시도해 주세요."); return; }
     } else {
       (myReports[id] = myReports[id] || []).push({ open, at: Date.now() });
       saveMine(myReports);
@@ -649,7 +673,7 @@ $("pickMine").addEventListener("click", () => {
 const onPick = (lat, lng) => relocateId ? saveLocation(lat, lng) : suggestId ? sendSuggestion(lat, lng) : setPicked(lat, lng);
 function cancelPick() {
   if (relocateId) { relocateId = null; stopPick(); openOwner(); }
-  else if (suggestId) { suggestId = null; stopPick(); }
+  else if (suggestId) { endSuggest(); stopPick(); }
   else closeForm();
 }
 map.on("click", e => { if (picking) onPick(e.latlng.lat, e.latlng.lng); });
@@ -698,13 +722,13 @@ $("stallForm").addEventListener("submit", async e => {
   try {
     let stall;
     if (REMOTE) {
-      const r = await fetch(`${SUPABASE_URL}/rest/v1/stalls`, {
-        method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json", Prefer: "return=representation" },
-        body: JSON.stringify(row),
-      });
-      if (!r.ok) throw new Error(r.status + " " + await r.text());
-      stall = rowToStall((await r.json())[0]);
+      // 새 가게는 관리자 승인 뒤에 지도에 올라가요 (security.sql의 add_stall)
+      await rpc("add_stall", { p: row });
+      lastStallSent = Date.now();
+      $("stallForm").reset(); syncOther(); $("hoursBox").style.display = "";
+      closeForm();
+      toast("등록 고마워요! 확인한 뒤 지도에 올릴게요.");
+      return;
     } else {
       stall = rowToStall({ ...row, id: 900000 + userStalls.length + 1, created_at: new Date().toISOString() });
       try { localStorage.setItem(LOCAL_STALLS_KEY, JSON.stringify([stall, ...userStalls])); } catch {}
@@ -720,7 +744,7 @@ $("stallForm").addEventListener("submit", async e => {
     toast("등록 고마워요! 지도에 바로 올라갔어요.");
   } catch (ex) {
     console.warn("가게 등록 실패", ex);
-    $("fErr").textContent = "등록하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
+    $("fErr").textContent = isRateLimited(ex) ? "가게 등록이 너무 많아요. 1시간쯤 뒤에 다시 시도해 주세요." : "등록하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
   } finally { $("fSubmit").disabled = false; }
 });
 
@@ -792,6 +816,8 @@ function claimView(id) {
       <input type="tel" id="cContact" maxlength="60" placeholder="010-1234-5678" autocomplete="tel">
       <label class="f" for="cNote">한마디 (선택)</label>
       <textarea id="cNote" maxlength="200" placeholder="예: 평일 오후에 연락 주세요"></textarea>
+      <p>연락처는 사장님이 맞는지 확인하는 데만 쓰고, 확인이 끝나면 지워요. 다른 사람에게 보이거나 다른 곳에 쓰이지 않아요.</p>
+      <label class="consent"><input type="checkbox" id="cAgree"> 연락처 수집·이용에 동의해요</label>
       <div class="err" id="cErr"></div>
       <button class="big save" type="submit" id="cSubmit">사장님 신청하기</button>
     </form>`;
@@ -821,9 +847,9 @@ function ownerView() {
       ${[1,2,3,4,5,6,0].map(d => { const h = hours[d]; return `
         <div class="hrow ${h ? "" : "off"}" data-day="${d}">
           <b>${DAYS[d]}</b>
-          <input type="time" id="o-${s.id}-${d}" value="${h ? h[0] : "15:00"}" aria-label="${DAYS[d]}요일 여는 시간">
+          <input type="time" id="o-${s.id}-${d}" value="${h ? esc(h[0]) : "15:00"}" aria-label="${DAYS[d]}요일 여는 시간">
           <span>~</span>
-          <input type="time" id="c-${s.id}-${d}" value="${h ? h[1] : "21:00"}" aria-label="${DAYS[d]}요일 닫는 시간">
+          <input type="time" id="c-${s.id}-${d}" value="${h ? esc(h[1]) : "21:00"}" aria-label="${DAYS[d]}요일 닫는 시간">
           <label><input type="checkbox" id="x-${s.id}-${d}" ${h ? "" : "checked"}>휴무</label>
         </div>`; }).join("")}
       <p>자정을 넘기면 닫는 시간을 더 이르게 적으면 돼요 (예: 18:00 ~ 01:00).</p>
@@ -843,6 +869,7 @@ function bindOwner(claimStallId) {
     e.preventDefault();
     const contact = $("cContact").value.trim();
     if (contact.length < 2) { $("cErr").textContent = "연락처를 적어 주세요."; return; }
+    if (!$("cAgree").checked) { $("cErr").textContent = "연락처 수집·이용에 동의해 주세요."; return; }
     const t = ownerToken(true);
     if (!t) { $("cErr").textContent = "이 브라우저는 저장이 막혀 있어요. 일반 창(시크릿 모드 아님)에서 다시 열어 주세요."; return; }
     $("cSubmit").disabled = true;
@@ -853,7 +880,7 @@ function bindOwner(claimStallId) {
       toast("신청했어요! 확인되면 연락드릴게요.");
     } catch (ex) {
       console.warn("사장님 신청 실패", ex);
-      $("cErr").textContent = String(ex).includes("too many") ? "이 가게에 확인 중인 신청이 많아요. 나중에 다시 시도해 주세요." : "신청하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
+      $("cErr").textContent = isRateLimited(ex) ? TOO_MANY : String(ex).includes("too many") ? "이 가게에 확인 중인 신청이 많아요. 나중에 다시 시도해 주세요." : "신청하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
       $("cSubmit").disabled = false;
     }
   });
@@ -943,28 +970,38 @@ async function sendFlag(id, reason, btn) {
   } catch (ex) {
     console.warn("신고 실패", ex);
     btn.disabled = false;
-    toast("신고하지 못했어요. 잠시 뒤 다시 시도해 주세요.");
+    toast(isRateLimited(ex) ? TOO_MANY : "신고하지 못했어요. 잠시 뒤 다시 시도해 주세요.");
   }
 }
 
 // ---- 손님 위치 수정 제안: 관리자가 location_suggestions에서 승인하면 반영돼요 ----
-function startSuggest(id) {
+let suggestPos = null, suggestArea = null;   // 제안할 때 내 위치와 지도에 그리는 200m 원
+async function startSuggest(id) {
   const st = STALLS.find(x => x.id === id);
+  toast("위치를 확인하고 있어요…");
+  try { suggestPos = await getMyPos(); } catch (ex) { toast(ex.message); return; }
   suggestId = id;
-  map.setView([st.lat, st.lng], 18);
+  map.setView([suggestPos.lat, suggestPos.lng], 17);
+  suggestArea = L.circle([suggestPos.lat, suggestPos.lng], { radius: SUGGEST_RADIUS_M, color: "#2a6df4", weight: 2, fillOpacity: .08, interactive: false }).addTo(map);
   startPick();
-  $("pickTitle").textContent = "📍 \"" + st.name + "\"의 정확한 자리를 지도에서 눌러 주세요";
+  $("pickTitle").textContent = "📍 \"" + st.name + "\"의 정확한 자리를 눌러 주세요 (파란 원 안, 지금 계신 곳 근처만)";
+}
+function endSuggest() {
+  suggestId = null;
+  if (suggestArea) { map.removeLayer(suggestArea); suggestArea = null; }
 }
 async function sendSuggestion(lat, lng) {
-  const id = suggestId; suggestId = null; stopPick();
+  const far = distKm(suggestPos, { lat, lng }) * 1000;
+  if (far > SUGGEST_RADIUS_M) { toast(`지금 계신 곳 근처(${SUGGEST_RADIUS_M}m 안)만 고를 수 있어요. 파란 원 안을 눌러 주세요.`); return; }   // 계속 고르기
+  const id = suggestId, my = suggestPos; endSuggest(); stopPick();
   const me = browserKey("winter-snack-me-v1", true);
   if (!me) { toast("이 브라우저는 저장이 막혀 있어서 보낼 수 없어요."); return; }
   try {
-    await rpc("suggest_location", { p_stall_id: id, p_reporter: me, p_lat: +lat.toFixed(6), p_lng: +lng.toFixed(6) });
+    await rpc("suggest_location", { p_stall_id: id, p_reporter: me, p_lat: +lat.toFixed(6), p_lng: +lng.toFixed(6), p_my_lat: my.lat, p_my_lng: my.lng });
     toast("고마워요! 확인한 뒤 지도에 반영할게요.");
   } catch (ex) {
     console.warn("위치 제안 실패", ex);
-    toast(String(ex).includes("too many") ? "이 가게에 확인 중인 제안이 많아요. 나중에 다시 보내 주세요." : "보내지 못했어요. 잠시 뒤 다시 시도해 주세요.");
+    toast(isRateLimited(ex) ? TOO_MANY : isTooFar(ex) ? "지금 계신 곳 근처만 고를 수 있어요." : String(ex).includes("too many") ? "이 가게에 확인 중인 제안이 많아요. 나중에 다시 보내 주세요." : "보내지 못했어요. 잠시 뒤 다시 시도해 주세요.");
   }
 }
 
@@ -973,7 +1010,12 @@ renderCats();
 render();
 loadPublic().then(render);
 Promise.all([fetchRemote(), loadClaims()]).then(render);
-setInterval(async () => { await fetchRemote(); render(); }, 60 * 1000);
+// 2분마다 새로 받아요. 탭이 안 보일 땐 받지 않고, 다시 보이면 바로 받아요 (Supabase 사용량 아끼기)
+const REFRESH_MS = 2 * 60 * 1000;
+let lastFetch = Date.now();
+async function refresh() { lastFetch = Date.now(); await fetchRemote(); render(); }
+setInterval(() => { if (!document.hidden) refresh(); }, REFRESH_MS);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - lastFetch > REFRESH_MS) refresh(); });
 </script>
 </body>
 </html>

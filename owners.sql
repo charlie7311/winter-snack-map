@@ -1,6 +1,6 @@
 -- 겨울 간식 지도: 사장님 기능 ("제 가게예요" 신청 → 관리자 승인 → "내 가게" 화면)
 -- Supabase 대시보드 > SQL Editor에 통째로 붙여넣고 Run 하면 됩니다. (여러 번 실행해도 괜찮아요)
--- stalls.sql을 먼저 실행한 뒤에 실행하세요.
+-- stalls.sql, security.sql을 먼저 실행한 뒤에 실행하세요.
 --
 -- 승인하는 법: Table Editor > owner_claims 에서 연락처로 사장님인지 확인하고 approved 칸을 체크(true)하면 끝.
 -- 사장님 폰 브라우저에 저장된 비밀 키로 본인을 확인해요. 그래서 다른 폰·브라우저에서는 다시 신청해야 해요.
@@ -32,6 +32,7 @@ returns void language plpgsql security definer set search_path = public as $$
 begin
   if p_token is null or char_length(p_token) < 32 or char_length(p_token) > 100 then raise exception 'bad token'; end if;
   if not exists (select 1 from stalls where id = p_stall_id) then raise exception 'no such stall'; end if;
+  perform private.hit('claim', 5, interval '1 hour');   -- IP당 1시간 5번 (security.sql)
   -- 장난 신청이 쌓이지 않게: 승인 안 된 신청은 가게당 5개까지
   if (select count(*) from owner_claims where stall_id = p_stall_id and not approved) >= 5 then
     raise exception 'too many pending claims';

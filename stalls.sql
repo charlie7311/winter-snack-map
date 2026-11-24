@@ -19,16 +19,7 @@ create table if not exists public.stalls (
 
 create index if not exists stalls_created_at_idx on public.stalls (created_at desc);
 
--- 누구나 가게 목록을 보고 새 가게를 등록할 수 있음. 수정·삭제는 관리자(대시보드)만.
+-- 읽기 규칙(승인된 가게만)과 등록(add_stall 함수, 승인 대기·IP별 제한)은 security.sql에 있어요. 수정·삭제는 관리자(대시보드)만.
 alter table public.stalls enable row level security;
-
-drop policy if exists "anyone can read stalls" on public.stalls;
-create policy "anyone can read stalls" on public.stalls
-  for select to anon using (true);
-
 drop policy if exists "anyone can add stall" on public.stalls;
-create policy "anyone can add stall" on public.stalls
-  for insert to anon
-  with check (created_at > now() - interval '1 minute' and created_at < now() + interval '1 minute');
-
-grant select, insert on public.stalls to anon;
+grant select on public.stalls to anon;
