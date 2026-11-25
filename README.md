@@ -30,6 +30,8 @@
 - `suggestions.sql` — 손님 위치 수정 제안과 승인. `notify.sql` 다음에 실행
 - `review.sql`, `review.html` — 디스코드 알림의 승인 링크(새 가게, 위치 제안). `suggestions.sql` 다음에 실행. 링크가 있으면 누구나 승인할 수 있으니 알림 채널은 비공개로
 - `public-stalls.sql` — 공개자료 가게를 stalls 테이블에도 넣어 사장님 신청이 되게 함. `owners.sql`, `categories.sql` 다음에 실행. `data/public-stalls.json`을 바꾸면 `node data/make-public-sql.js`로 다시 만들고 다시 실행
+- `privacy.html` — 개인정보 처리 안내. 저장하는 것이 바뀌면 같이 고쳐요
+- `og.png` — 링크를 공유할 때 나오는 그림 (1200×630)
 - `data/public-stalls.json` — 구청 공개자료에서 고른 노점 (id 500~)
 
 ## 제보 공유 켜기

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>개인정보 처리 안내 · 겨울 간식 지도</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍠</text></svg>">
+<style>
+  :root { --bg: #fbf7f1; --text: #2b2118; --muted: #7a6a5b; --line: #eadfce; --link: #a85a10; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1b1612; --text: #f2e8dc; --muted: #b0a08e; --line: #3a2f25; --link: #e8954a; color-scheme: dark; } }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 720px; padding: 20px 16px 60px; background: var(--bg); color: var(--text); font-family: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; line-height: 1.65; word-break: keep-all; overflow-wrap: anywhere; }
+  h1 { font-size: 24px; } h2 { font-size: 18px; margin: 32px 0 8px; } a { color: var(--link); } .muted { color: var(--muted); font-size: 14px; }
+  .wide { overflow-x: auto; } table { border-collapse: collapse; width: 100%; min-width: 520px; font-size: 15px; } th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  @media (max-width: 600px) { table { min-width: 0; } tr:first-child { display: none; } tr { display: block; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; } td { display: block; border: 0; padding: 2px 0; } td:first-child { font-weight: 700; } td:nth-child(2)::before { content: "저장: "; } td:nth-child(3)::before { content: "쓰는 곳: "; } td:nth-child(4)::before { content: "보관: "; } td::before { color: var(--muted); } }
+</style>
+</head>
+<body>
+<p><a href="./">← 지도로 가기</a></p>
+<h1>개인정보 처리 안내</h1>
+<p>겨울 간식 지도(snackmap.kr)는 회원가입이 없고, 필요한 정보만 다뤄요. 아래는 이 사이트가 실제로 저장하는 것들이에요.</p>
+
+<h2>1. 무엇을, 왜, 언제까지</h2>
+<div class="wide"><table>
+<tr><th>언제</th><th>저장하는 것</th><th>쓰는 곳</th><th>보관</th></tr>
+<tr><td>사장님 신청</td><td>연락처, 한마디(선택)</td><td>가게 사장님이 맞는지 확인. 운영자만 볼 수 있어요</td><td>승인하면 바로 자동 삭제. 승인하지 않은 신청은 운영자가 확인한 뒤 삭제</td></tr>
+<tr><td>사장님 신청</td><td>브라우저 키의 해시, 신청한 가게</td><td>승인된 사장님을 알아보기</td><td>신청을 지울 때까지</td></tr>
+<tr><td>가게 등록</td><td>가게 이름·위치·메뉴 등 입력한 내용</td><td>지도에 공개</td><td>가게를 지울 때까지</td></tr>
+<tr><td>열림·닫힘 제보</td><td>가게, 열림·닫힘, 시각, 사장님이 누른 것인지 여부 (손님이 누구인지는 저장하지 않아요)</td><td>영업 상태 표시</td><td>운영자가 지울 때까지</td></tr>
+<tr><td>위치 수정 제안</td><td>지도에서 고른 자리, 브라우저 키의 해시</td><td>가게 위치 고치기, 중복 확인</td><td>운영자가 지울 때까지</td></tr>
+<tr><td>잘못된 정보 신고</td><td>신고 이유, IP 해시</td><td>같은 사람이 여러 번 신고하는 것 막기</td><td>IP 해시는 30일이 지나면 다음 신고가 들어올 때 삭제</td></tr>
+<tr><td>등록·제보·신고·신청·제안</td><td>IP 해시, 브라우저 키의 해시, 시각</td><td>너무 잦은 요청 막기</td><td>2일이 지나면 다음 요청이 들어올 때 삭제</td></tr>
+</table></div>
+<p class="muted">IP 원문은 우리 데이터베이스에 저장하지 않고, 이 사이트만 아는 값을 섞어 바꾼 해시만 저장해요.</p>
+
+<h2>2. 내 위치</h2>
+<p>위치는 폰에서 허용했을 때만 써요. 열림·닫힘 제보와 위치 수정 제안을 할 때 가게 근처인지 확인하려고 서버로 보내 거리만 계산하고, 우리 데이터베이스에 <b>저장하지 않아요.</b> "내 주변"은 브라우저 안에서만 계산해요. 허용하지 않아도 지도와 가게 정보는 볼 수 있어요.</p>
+
+<h2>3. 이 브라우저에 저장되는 것</h2>
+<p>사장님 확인과 중복 방지에 쓰는 무작위 키, 신고한 가게 번호가 브라우저(localStorage)에 저장돼요. 브라우저의 사이트 데이터를 지우면 없어져요. 광고나 방문자 추적 도구는 쓰지 않아요.</p>
+
+<h2>4. 함께 쓰는 서비스</h2>
+<ul>
+<li>Supabase: 위 정보를 저장하는 데이터베이스</li>
+<li>GitHub Pages: 사이트 화면 제공</li>
+<li>OpenStreetMap, cdnjs(Cloudflare): 지도 그림과 지도 프로그램 제공</li>
+<li>Discord: 운영자에게 새 가게·신고·신청 알림 (연락처와 한마디는 보내지 않아요)</li>
+</ul>
+<p>이 서비스들의 서버는 해외에 있을 수 있고, 각 서비스의 접속 기록에는 IP 주소가 남을 수 있어요. 개인정보를 팔거나 그 밖의 곳에 주지 않아요.</p>
+
+<h2>5. 내 정보를 보거나 지우고 싶을 때</h2>
+<p>신청한 연락처나 등록한 내용을 확인하거나 고치고 지워 달라고 할 수 있어요. 사장님 신청의 연락처 수집에는 동의하지 않아도 되고, 그러면 신청만 할 수 없어요.</p>
+<p>운영자 연락처: <a href="https://github.com/charlie7311/winter-snack-map/issues" target="_blank" rel="noopener">GitHub 이슈</a> (GitHub 가입 필요). <b>글이 모두에게 공개되니 전화번호 같은 개인정보는 적지 말고</b>, 가게 이름과 신청·등록한 시각만 적어 주세요.</p>
+
+<p class="muted">시행일: 2026년 11월 26일. 내용이 바뀌면 이 페이지에 알려요.</p>
+</body>
+</html>
