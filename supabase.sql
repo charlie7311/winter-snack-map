@@ -8,6 +8,8 @@ create table if not exists public.reports (
   created_at  timestamptz not null default now()
 );
 
+alter table public.reports add column if not exists by_owner boolean not null default false;   -- 사장님이 누른 기록 (owners.sql의 owner_update)
+
 create index if not exists reports_created_at_idx on public.reports (created_at desc);
 
 -- 행 단위 보안: 누구나(로그인 없이) 최근 제보를 읽을 수 있음. 제보 남기기는 security.sql의 add_report 함수로만 (IP별 횟수 제한).
@@ -20,6 +22,6 @@ grant select on public.reports to anon;
 drop policy if exists "read recent reports" on public.reports;
 create policy "read recent reports" on public.reports
   for select to anon
-  using (created_at > now() - interval '2 days');
+  using (created_at > now() - interval '15 days');   -- 화면에서 지난 14일 제보를 참고해요
 
 drop policy if exists "anyone can report" on public.reports;

@@ -9,19 +9,19 @@
 <style>
   :root {
     --bg: #fbf7f1; --panel: #ffffff; --text: #2b2118; --muted: #7a6a5b;
-    --line: #eadfce; --accent: #c8741f; --open: #1f8a4c; --closed: #a3988c;
+    --line: #eadfce; --accent: #c8741f; --open: #1f8a4c; --closed: #a3988c; --shut: #c0392b;
     --soon: #c98a00; --chip: #f3e9db; --report: #2a6df4;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #1b1612; --panel: #241d17; --text: #f2e8dc; --muted: #b0a08e;
-      --line: #3a2f25; --accent: #e8954a; --open: #4cc584; --closed: #7d7166;
+      --line: #3a2f25; --accent: #e8954a; --open: #4cc584; --closed: #7d7166; --shut: #f0806f;
       --soon: #e3b23c; --chip: #33291f; --report: #7ea6ff;
     }
   }
   :root[data-theme="dark"] {
     --bg: #1b1612; --panel: #241d17; --text: #f2e8dc; --muted: #b0a08e;
-    --line: #3a2f25; --accent: #e8954a; --open: #4cc584; --closed: #7d7166;
+    --line: #3a2f25; --accent: #e8954a; --open: #4cc584; --closed: #7d7166; --shut: #f0806f;
     --soon: #e3b23c; --chip: #33291f; --report: #7ea6ff;
   }
   * { box-sizing: border-box; }
@@ -57,13 +57,12 @@
     #list { overflow: visible; border-left: none; }
     .card { scroll-margin-top: calc(42vh + 8px); }
   }
-  .summary { padding: 10px 16px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--line); }
   .card { padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
   .card:hover, .card.active { background: var(--chip); }
   .card .top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
   .card h3 { margin: 0; font-size: 16px; }
-  .badge { font-size: 12px; font-weight: 600; white-space: nowrap; }
-  .badge.open { color: var(--open); } .badge.closed { color: var(--closed); } .badge.soon { color: var(--soon); }
+  .badge { font-size: 14px; font-weight: 700; white-space: nowrap; }
+  .badge.open { color: var(--open); } .badge.closed { color: var(--shut); } .badge.unknown { color: var(--muted); }
   .reportline { font-size: 12px; margin-top: 4px; color: var(--report); }
   .reportline.stale { color: var(--muted); }
   .meta { font-size: 13px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
@@ -90,7 +89,7 @@
     box-shadow: 0 1px 4px rgba(0,0,0,.35);
   }
   .pin span { transform: rotate(45deg); font-size: 15px; }
-  .pin.open { background: var(--open); } .pin.soon { background: var(--soon); } .pin.closed { background: var(--closed); }
+  .pin.open { background: var(--open); } .pin.soon { background: var(--soon); } .pin.closed { background: var(--shut); } .pin.unknown { background: var(--closed); }
   .empty { padding: 24px 16px; color: var(--muted); font-size: 14px; }
   footer a { color: inherit; }
   footer { font-size: 12px; color: var(--muted); padding: 8px 16px; border-top: 1px solid var(--line); background: var(--panel); }
@@ -197,7 +196,7 @@
   <div id="map"></div>
   <section id="list"></section>
 </main>
-<footer>가게 정보: 손님 등록 + 구청 허가 거리가게 공개자료(<a href="https://www.data.go.kr" target="_blank" rel="noopener">공공데이터포털</a>). 아는 노점이 있으면 ＋ 가게 등록으로 알려 주세요(확인 후 지도에 올라가요). 영업 여부는 사장님·손님이 알려 준 상태를 우선으로 보여주고, 없으면 등록된 영업시간으로 추정해요. 사장님이시면 가게를 눌러 "이 가게 사장님이세요?"로 신청해 주세요.</footer>
+<footer>가게 정보: 손님 등록 + 구청 허가 거리가게 공개자료(<a href="https://www.data.go.kr" target="_blank" rel="noopener">공공데이터포털</a>). 아는 노점이 있으면 ＋ 가게 등록으로 알려 주세요(확인 후 지도에 올라가요). '영업중'과 '영업 종료'는 사장님이나 손님이 방금 확인한 가게에만 표시해요. 확인이 없으면 지난 제보나 등록된 영업시간을 참고로 보여줘요. 사장님이시면 가게를 눌러 "이 가게 사장님이세요?"로 신청해 주세요.</footer>
 <div id="toast"></div>
 
 <div id="owner" hidden role="dialog" aria-modal="true" aria-labelledby="ownerTitle">
@@ -309,36 +308,33 @@ function kstNow() {
 }
 const toMin = s => { const [h, m] = s.split(":").map(Number); return h * 60 + m; };
 
-// 영업시간 기준 추정. 반환: {state: "open"|"soon"|"closed", text}
+// 등록된 영업시간표만 본 결과. 반환: {openNow, text}
 function scheduleStatus(stall, now) {
-  if (!stall.hours) return { state: "closed", text: "영업시간 미등록" };
+  if (!stall.hours) return { openNow: false, text: "" };
   const today = stall.hours[now.day];
   const yday = stall.hours[(now.day + 6) % 7];
   if (yday) {
     const o = toMin(yday[0]), c = toMin(yday[1]);
-    if (c < o && now.min < c) return closingText(c - now.min, yday[1]);
+    if (c < o && now.min < c) return closingText(yday[1]);
   }
   if (today) {
     const o = toMin(today[0]), c = toMin(today[1]);
     const overnight = c < o;
     if (now.min >= o && (overnight || now.min < c)) {
-      return closingText(overnight ? (1440 - now.min + c) : (c - now.min), today[1]);
+      return closingText(today[1]);
     }
     if (now.min < o) {
-      const wait = o - now.min;
-      if (wait <= 60) return { state: "soon", text: `${wait}분 뒤 오픈 (${today[0]})` };
-      return { state: "closed", text: `오늘 ${today[0]} 오픈` };
+      return { openNow: false, text: `오늘 ${today[0]} 오픈` };
     }
   }
   for (let i = 1; i <= 7; i++) {
     const d = (now.day + i) % 7, h = stall.hours[d];
-    if (h) return { state: "closed", text: `${i === 1 ? "내일" : DAYS[d] + "요일"} ${h[0]} 오픈` };
+    if (h) return { openNow: false, text: `${i === 1 ? "내일" : DAYS[d] + "요일"} ${h[0]} 오픈` };
   }
-  return { state: "closed", text: "영업 정보 없음" };
+  return { openNow: false, text: "매일 휴무" };
 }
-function closingText(left, closeAt) {
-  if (left <= 30) return { state: "soon", text: `곧 마감 (${closeAt}까지)` };
-  return { state: "open", text: `영업중 · ${closeAt}까지` };
+function closingText(closeAt) {
+  return { openNow: true, text: `${closeAt}까지` };
 }
 
 // ---- 손님 제보 ----
@@ -355,15 +351,21 @@ function authHeaders() {
   if (SUPABASE_ANON_KEY.startsWith("eyJ")) h.Authorization = `Bearer ${SUPABASE_ANON_KEY}`;
   return h;
 }
+let history14 = [], historyAt = 0;
+// shortcut: 한 번에 최신 1000건까지만 받아요. 14일 제보가 1000건을 넘으면 오래된 쪽이 빠지니, 그때 서버 함수로 가게별 한 건만 받게 바꿔요.
+async function fetchReports(from) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/reports?select=stall_id,is_open,created_at,by_owner&created_at=gte.${new Date(from).toISOString()}&order=created_at.desc&limit=1000`, { headers: authHeaders() });
+  if (!r.ok) throw new Error(r.status);
+  return (await r.json()).map(x => ({ id: x.stall_id, open: x.is_open, at: Date.parse(x.created_at), owner: x.by_owner }));
+}
 async function fetchRemote() {
   if (!REMOTE) return;
-  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const t = Date.now(), recentFrom = t - 6 * 3600 * 1000;
   try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/reports?select=stall_id,is_open,created_at&created_at=gte.${since}&order=created_at.desc&limit=2000`,
-      { headers: authHeaders() });
-    if (!r.ok) throw new Error(r.status);
+    const recent = await fetchReports(recentFrom);
+    if (t - historyAt > 30 * 60 * 1000) { history14 = await fetchReports(t - HINT_DAYS * 864e5); historyAt = t; }
     const next = {};
-    for (const row of await r.json()) (next[row.stall_id] = next[row.stall_id] || []).push({ open: row.is_open, at: Date.parse(row.created_at) });
+    for (const r of [...recent, ...history14.filter(r => r.at < recentFrom)]) (next[r.id] = next[r.id] || []).push(r);
     remoteReports = next;
   } catch (e) { console.warn("제보 불러오기 실패", e); }
   try {
@@ -402,9 +404,9 @@ const isTooFar = ex => String(ex).includes("too far");
 const isRateLimited = ex => String(ex).includes("rate limited");
 const TOO_MANY = "요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.";
 
-const FRESH_MIN = 120;  // 이 시간 안의 제보는 영업시간보다 우선
-const OWNER_FRESH_MIN = 12 * 60;
-const HIDE_FLAGS = 3;   // "없어짐"·"가짜" 신고가 이만큼 쌓이면 숨김 (notify.sql의 숫자와 같게)  // 사장님이 누른 영업중/영업 끝은 이 시간 동안 우선
+const OWNER_FRESH_MIN = 12 * 60;   // 사장님이 누른 상태를 길어도 이 시간까지만 믿음
+const HIDE_FLAGS = 3;   // "없어짐"·"가짜" 신고가 이만큼 쌓이면 숨김 (notify.sql의 숫자와 같게)
+const HINT_DAYS = 14, HINT_WINDOW_MIN = 180;   // 지난 제보는 14일 안, 지금 시각 앞뒤 3시간만 참고
 const STORE_KEY = "winter-snack-reports-v1";
 function loadMine() {
   try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch { return {}; }
@@ -423,35 +425,65 @@ function ago(ts) {
   return `${Math.floor(m / 1440)}일 전`;
 }
 
-// 제보 + 영업시간을 합친 최종 상태
+// ---- 영업 상태 판단 (test-status.js가 이 부분을 검사해요) ----
+// 화면에는 셋 중 하나만: open 영업중 / closed 영업 종료 (누가 방금 확인함) / unknown 확인 안 됨.
+// 믿는 순서: 지금 막 알려 준 사장님·손님 > 지난 제보(이 시각쯤 어땠는지) > 등록된 영업시간표
+const minsAgo = at => (Date.now() - at) / 60000;
+
+// 지금 믿을 수 있는 확인. 없으면 null
+function liveSignal(stall, sched, reps) {
+  const customers = reps.filter(r => !r.owner && minsAgo(r.at) <= 120);
+  let cust = customers[0] || null;
+  // 한 사람의 거짓 제보로 뒤집히지 않게, 1시간 안에 3건이 있으면 많은 쪽
+  const votes = customers.filter(r => minsAgo(r.at) <= 60).slice(0, 3);
+  if (votes.length === 3) { const open = votes.filter(r => r.open).length >= 2; cust = votes.find(r => r.open === open); }
+
+  let owner = null;
+  if (stall.ownerAt) {
+    const age = minsAgo(stall.ownerAt);
+    // 마감 누르는 걸 잊을 수 있어서 '영업중'은 6시간, 영업시간표가 끝났으면 1시간만. '영업 끝'은 다음 영업시간 전까지(최대 12시간)
+    const ok = stall.ownerOpen ? age <= 360 && (!stall.hours || sched.openNow || age <= 60)
+                               : age <= OWNER_FRESH_MIN && !(sched.openNow && age > 360);
+    if (ok) owner = { open: stall.ownerOpen, at: stall.ownerAt, owner: true };
+  }
+  if (!owner || !cust) return owner || cust;
+  // 사장님이 우선. 단, 누른 지 1시간이 지났고 손님 제보가 더 새로우면 손님 쪽
+  return minsAgo(owner.at) <= 60 || cust.at <= owner.at ? owner : cust;
+}
+
+// 한국 시간의 날짜 번호와 하루 중 분
+const kstDay = at => Math.floor((at + 9 * 3600e3) / 864e5);
+const kstTod = at => Math.floor((at + 9 * 3600e3) / 60000) % 1440;
+function whenLabel(at) {
+  const d = kstDay(Date.now()) - kstDay(at), m = kstTod(at);
+  return (d <= 0 ? "오늘" : d === 1 ? "어제" : d + "일 전") + " " + String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+}
+// 확인이 없을 때 참고할 지난 제보 하나.
+//  - 이 시각 뒤에 영업중이었다 → 지금도 열려 있을 수 있음
+//  - 이 시각 앞에 영업 종료였다 → 지금 닫혔을 수 있음
+//  - 이 시각 앞에 영업중이었다 → 참고 (이 시각 뒤에 닫혀 있던 건 지금을 알려 주지 않아서 뺌)
+//  여러 개면 지금 시각에 가장 가까운 것. 방금 전(3시간 안) 제보가 있으면 그게 먼저
+function pastHint(stall, reps) {
+  const all = [...reps];
+  if (stall.ownerAt && !all.some(r => r.owner && Math.abs(r.at - stall.ownerAt) < 60000)) all.push({ open: stall.ownerOpen, at: stall.ownerAt, owner: true });
+  all.sort((a, b) => b.at - a.at);
+  if (all[0] && minsAgo(all[0].at) <= HINT_WINDOW_MIN) return all[0];
+  const nowTod = kstTod(Date.now());
+  return all.filter(r => minsAgo(r.at) <= HINT_DAYS * 1440)
+    .map(r => ({ ...r, diff: ((kstTod(r.at) - nowTod + 2160) % 1440) - 720 }))     // 자정을 넘겨도 앞뒤를 맞게: -720 ~ 719분
+    .filter(r => Math.abs(r.diff) <= HINT_WINDOW_MIN && (r.open || r.diff <= 0))
+    .sort((a, b) => Math.abs(a.diff) - Math.abs(b.diff) || (b.owner ? 1 : 0) - (a.owner ? 1 : 0) || b.at - a.at)[0] || null;
+}
+// rank: 목록 순서 (0 영업중, 1 열렸을 수 있음, 2 모름, 3 닫힘·닫혔을 수 있음)
 function status(stall, now) {
-  const sched = scheduleStatus(stall, now);
-  const reps = reportsFor(stall.id);
-  const latest = reps[0];
-  const fresh = latest && (Date.now() - latest.at) / 60000 <= FRESH_MIN;
-  // shortcut: 사장님 상태는 12시간 동안만 유효 (마감을 안 누르고 가도 다음 날엔 영업시간 추정으로 돌아감)
-  const ownerFresh = stall.ownerAt && (Date.now() - stall.ownerAt) / 60000 <= OWNER_FRESH_MIN && !(fresh && latest.at > stall.ownerAt);
-  if (ownerFresh) {
-    return {
-      state: stall.ownerOpen ? "open" : "closed",
-      text: stall.ownerOpen ? "영업중 (사장님)" : "오늘 영업 끝 (사장님)",
-      report: `🧑‍🍳 ${ago(stall.ownerAt)} 사장님: ${stall.ownerOpen ? "영업 시작했어요" : "오늘 영업 끝났어요"}`,
-      fresh: true, sched,
-    };
-  }
-  if (fresh) {
-    return {
-      state: latest.open ? "open" : "closed",
-      text: latest.open ? "영업중 (제보)" : "닫힘 (제보)",
-      report: `🙋 ${ago(latest.at)} 손님 제보: ${latest.open ? "열려 있어요" : "닫혀 있어요"}`,
-      fresh: true, sched,
-    };
-  }
-  return {
-    ...sched, sched,
-    report: (latest ? `마지막 제보 ${ago(latest.at)} (${latest.open ? "열림" : "닫힘"})` : "아직 제보 없음") + (stall.hours ? " · 영업시간 기준 추정" : " · 영업 여부를 알려 주세요"),
-    fresh: false,
-  };
+  const sched = scheduleStatus(stall, now), reps = reportsFor(stall.id), live = liveSignal(stall, sched, reps);
+  const who = r => r.owner ? "🧑‍🍳 사장님" : "🙋 손님 제보";
+  if (live) return { state: live.open ? "open" : "closed", text: live.open ? "영업중" : "영업 종료", report: `${who(live)} · ${ago(live.at)}`, live: true, byOwner: !!live.owner, sched, rank: live.open ? 0 : 3 };
+  const base = { state: "unknown", text: "확인 안 됨", live: false, sched };
+  const hint = pastHint(stall, reps);
+  if (hint) return { ...base, report: `${whenLabel(hint.at)}에는 ${hint.open ? "영업중이었어요" : "영업이 끝나 있었어요"} (${hint.owner ? "사장님" : "손님 제보"})`, rank: hint.open ? 1 : 3 };
+  if (stall.hours) return { ...base, report: sched.openNow ? `등록된 영업시간이에요 (${sched.text})` : `등록된 영업시간이 아니에요 (${sched.text})`, rank: sched.openNow ? 1 : 3 };
+  return { ...base, report: "아직 제보가 없어요", rank: 2 };
 }
 
 // ---- 지도 ----
@@ -494,14 +526,13 @@ function publicInfo(s) {
     ${old ? `<br>⚠️ ${s.srcDate.slice(0, 4)}년 자료라 지금은 없을 수도 있어요. 가 보셨다면 제보 부탁해요.` : ""}
   </div>`;
 }
-function reportBox(stall, st) {
-  const recent = reportsFor(stall.id).slice(0, 4);
+function reportBox(stall) {
+  const recent = reportsFor(stall.id).slice(0, 5);
   return `<div class="report-box">
     <div class="q">지금 이 가게 앞이세요? 영업 여부를 알려주세요. <span class="hint">(가게 근처에서만, 위치 권한 필요)</span></div>
     <button class="yes" data-report="${stall.id}" data-open="1">🟢 지금 열려 있어요</button>
     <button class="no" data-report="${stall.id}" data-open="0">⚪ 지금 닫혀 있어요</button>
-    ${recent.length ? `<ul>${recent.map(r => `<li>${ago(r.at)} · ${r.open ? "열림" : "닫힘"}</li>`).join("")}</ul>` : ""}
-    ${st.fresh ? `<div class="meta">영업시간 기준으로는: ${st.sched.text}</div>` : ""}
+    ${recent.length ? `<ul>${recent.map(r => `<li>${whenLabel(r.at)} · ${r.owner ? "사장님" : "손님"} · ${r.open ? "영업중" : "영업 종료"}</li>`).join("")}</ul>` : ""}
   </div>`;
 }
 
@@ -532,11 +563,10 @@ function render() {
   rows = rows.filter(({ s, st }) =>
     !(s.flagCount >= HIDE_FLAGS) &&
     (filterType === "all" || s.types.includes(filterType)) &&
-    (!openOnly || st.state !== "closed") &&
+    (!openOnly || st.state === "open") &&
     (!query || (s.name + s.area + s.menu + (s.address || "") + s.types.join("") + (s.otherFood || "")).includes(query)));
-  const rank = { open: 0, soon: 1, closed: 2 };
   rows.sort((a, b) => userPos ? a.d - b.d
-    : rank[a.st.state] - rank[b.st.state] || (b.st.fresh - a.st.fresh) || a.s.name.localeCompare(b.s.name, "ko"));
+    : a.st.rank - b.st.rank || a.s.name.localeCompare(b.s.name, "ko"));
 
   Object.values(markers).forEach(m => map.removeLayer(m));
   for (const k in markers) delete markers[k];
@@ -546,19 +576,16 @@ function render() {
     m.on("click", () => select(s.id, false));
   });
 
-  const openCount = rows.filter(r => r.st.state !== "closed").length;
-  const label = filterType === "all" ? "" : `${EMOJI[filterType]} ${filterType} · `;
   const list = document.getElementById("list");
-  list.innerHTML = `<div class="summary">${label}${rows.length}곳 중 ${openCount}곳 영업중${userPos ? " · 가까운 순" : ""}</div>` +
-    (rows.length ? rows.map(({ s, st, d }) => `
+  list.innerHTML = (rows.length ? rows.map(({ s, st, d }) => `
       <div class="card ${s.id === activeId ? "active" : ""}" data-id="${s.id}">
         <div class="top"><h3>${esc(s.name)}</h3><span class="badge ${st.state}">${esc(st.text)}</span></div>
-        <div class="reportline ${st.fresh ? "" : "stale"}">${esc(st.report)}</div>
+        <div class="reportline ${st.live ? "" : "stale"}">${esc(st.report)}</div>
         <div class="meta">${esc(s.area)}${d != null ? ` · ${d < 1 ? Math.round(d * 1000) + "m" : d.toFixed(1) + "km"}` : ""}${s.menu ? `<br>${esc(s.menu)}` : ""}</div>
         <div class="tags">${s.public ? `<span class="tag" title="구청 허가 거리가게 자료">📋 구청 자료 ${s.srcDate.slice(0, 7).replace("-", ".")}</span>` : ""}${s.createdAt && Date.now() - s.createdAt < 7 * 86400000 ? `<span class="tag new">새로 등록</span>` : ""}${s.types.map(t => `<span class="tag">${EMOJI[t] || ""} ${esc(t === "기타" && s.otherFood ? s.otherFood : t)}</span>`).join("")}${s.pay ? `<span class="tag">${esc(s.pay)}</span>` : ""}</div>
-        <div class="detail">${s.public ? publicInfo(s) : ""}${hoursTable(s, now)}${reportBox(s, st)}${REMOTE && (!s.public || s.inDb) ? ownerLink(s) + flagBox(s) : ""}</div>
+        <div class="detail">${s.public ? publicInfo(s) : ""}${hoursTable(s, now)}${reportBox(s)}${REMOTE && (!s.public || s.inDb) ? ownerLink(s) + flagBox(s) : ""}</div>
       </div>`).join("")
-    : `<div class="empty">조건에 맞는 가게가 없어요.</div>`);
+    : `<div class="empty">${openOnly ? "지금 영업중으로 확인된 가게가 없어요. '지금 영업중만'을 끄면 다른 가게도 볼 수 있어요." : "조건에 맞는 가게가 없어요."}</div>`);
   list.querySelectorAll(".card").forEach(el => el.addEventListener("click", () => select(+el.dataset.id, true)));
   list.querySelectorAll("details.flag").forEach(d => d.addEventListener("click", e => e.stopPropagation()));
   list.querySelectorAll("[data-suggest]").forEach(b => b.addEventListener("click", () => startSuggest(+b.dataset.suggest)));
@@ -833,11 +860,11 @@ function ownerView() {
   return mine.map(({ c, s }) => {
     if (!c.approved) return `<h3>${esc(s.name)}</h3><p>⏳ 사장님 신청을 확인하고 있어요. 승인되면 여기서 바로 바꿀 수 있어요.</p>`;
     const st = status(s, now);
-    const ownerOn = s.ownerAt && (Date.now() - s.ownerAt) / 60000 <= OWNER_FRESH_MIN;
+    const ownerOn = st.byOwner;   // 손님에게 보이는 상태와 같을 때만 눌린 것으로
     const hours = s.hours || [0,1,2,3,4,5,6].map(() => ["15:00", "21:00"]);
     return `<section data-stall="${s.id}">
       <h3>${esc(s.name)}</h3>
-      <div class="now">손님에게 지금 이렇게 보여요: <b>${esc(st.text)}</b></div>
+      <div class="now">손님에게 지금 이렇게 보여요: <b>${esc(st.text)}</b> · ${esc(st.report)}</div>
       ${s.flagCount >= HIDE_FLAGS ? `<p class="warn">손님 신고가 쌓여서 지금 지도에서 숨겨져 있어요. 관리자가 확인하면 다시 보여요.</p>` : ""}
       <div class="bigrow">
         <button class="big open" data-oopen="1" aria-pressed="${ownerOn && s.ownerOpen === true}">🟢 지금 영업중</button>

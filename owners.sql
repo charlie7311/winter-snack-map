@@ -99,6 +99,7 @@ begin
   if p_patch ? 'open' then
     if jsonb_typeof(p_patch->'open') <> 'boolean' then raise exception 'bad open'; end if;
     update stalls set owner_open = (p_patch->>'open')::boolean, owner_open_at = now() where id = p_stall_id;
+    insert into reports (stall_id, is_open, by_owner) values (p_stall_id, (p_patch->>'open')::boolean, true);   -- 지난 기록으로도 남김
   end if;
 end $$;
 
