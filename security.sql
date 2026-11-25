@@ -92,7 +92,7 @@ language sql immutable as $$ select regexp_replace(coalesce(p, ''), '[][()<>{}*_
 drop function if exists public.rate_limit_source();   -- 점검용이었고 이제 안 써요
 
 -- 디스코드 알림의 승인 링크 (여는 쪽은 review.sql, review.html)
-insert into private.settings (key, value) values ('site_url', 'https://charlie7311.github.io/winter-snack-map/') on conflict (key) do nothing;
+insert into private.settings (key, value) values ('site_url', 'https://snackmap.kr/') on conflict (key) do nothing;
 
 -- 링크의 키는 sha256만 저장. lat/lng는 알림에 나온 자리 (제안이 그 뒤에 바뀌면 이 링크로는 승인 안 됨)
 create table if not exists private.review_links (
