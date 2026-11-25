@@ -183,6 +183,13 @@
   #owner .warn { color: #c0392b; font-weight: 600; }
   #owner .consent { display: flex; gap: 8px; align-items: center; font-size: 16px; margin-top: 8px; }
   #owner .consent input { width: 22px; height: 22px; }
+  /* ---- 위치가 막혔을 때 안내 ---- */
+  #geoHelp { border: 0; border-radius: 16px; padding: 20px; width: min(420px, calc(100% - 32px)); background: var(--panel); color: var(--text); font-size: 16px; line-height: 1.55; }
+  #geoHelp::backdrop { background: rgba(0,0,0,.5); }
+  #geoHelp [hidden] { display: none; }
+  #geoHelp h2 { margin: 0 0 8px; font-size: 20px; } #geoHelp p { margin: 0 0 12px; white-space: pre-line; }
+  #geoHelp input { width: 100%; font-size: 14px; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  #geoHelp .big { margin-top: 10px; font-size: 18px; padding: 14px 12px; text-align: center; text-decoration: none; }
   /* ---- 신고 ---- */
   details.flag { margin-top: 8px; font-size: 13px; }
   details.flag summary { color: var(--muted); cursor: pointer; padding: 4px 0; width: fit-content; }
@@ -217,6 +224,17 @@
     <div id="ownerBody"></div>
   </div>
 </div>
+
+<dialog id="geoHelp" aria-labelledby="geoTitle">
+  <h2 id="geoTitle"></h2>
+  <p id="geoText"></p>
+  <div id="geoLinkBox">
+    <input id="geoLink" type="text" readonly aria-label="이 가게 링크">
+    <a class="big save" id="geoOpen" hidden>크롬으로 열기</a>
+    <button class="big" id="geoCopy">링크 복사</button>
+  </div>
+  <button class="big" id="geoClose">닫기</button>
+</dialog>
 
 <div id="pickBanner">
   <b id="pickTitle">📍 지도에서 가게 위치를 눌러 주세요</b>
@@ -405,12 +423,34 @@ async function sendRemote(stallId, open, pos) {
 const REPORT_RADIUS_M = 500, SUGGEST_RADIUS_M = 200;   // security.sql, suggestions.sql과 같은 숫자
 function getMyPos() {
   return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) return reject(new Error("이 브라우저는 위치 기능이 없어서 제보할 수 없어요."));
+    if (!navigator.geolocation) return reject(Object.assign(new Error("이 브라우저는 위치 기능이 없어요."), { blocked: "app" }));
     navigator.geolocation.getCurrentPosition(
       p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
-      e => reject(new Error(e.code === 1 ? "위치 권한을 허용해야 알려 줄 수 있어요. 브라우저 설정에서 위치를 허용해 주세요." : "지금 위치를 확인하지 못했어요. 잠시 뒤 다시 시도해 주세요.")),
+      e => reject(Object.assign(new Error("지금 위치를 확인하지 못했어요. 잠시 뒤 다시 시도해 주세요."), { blocked: e.code === 1 ? (inApp ? "app" : "denied") : null })),
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
   });
+}
+// 에타·카톡 같은 앱 안의 브라우저는 위치를 안 주는 경우가 많아요
+const UA = navigator.userAgent, isAndroid = /Android/.test(UA);
+const inApp = /; wv\)|KAKAOTALK|everytime|Instagram|FBA[NV]|NAVER\(|Line\/|DaumApps/i.test(UA) || (/iPhone|iPad/.test(UA) && !/Safari\//.test(UA));
+// 위치를 못 받았을 때: 앱 안이면 다른 브라우저로, 권한 거부면 켜는 법. 그 밖엔 잠깐 알림
+function geoFailed(ex, stallId) {
+  if (!ex.blocked) { toast(ex.message); return; }
+  $("toast").classList.remove("show");
+  const app = ex.blocked === "app", path = location.host + location.pathname + "?stall=" + stallId, link = location.protocol + "//" + path;
+  $("geoTitle").textContent = app ? "크롬이나 사파리에서 열어 주세요" : "위치 권한을 켜 주세요";
+  $("geoText").textContent = app
+    ? "이 앱 안에서는 위치를 확인할 수 없어서 알려 줄 수 없어요. 아래 링크로 열면 보던 가게가 바로 나와요.\n\n오른쪽 위 메뉴에서 '다른 브라우저로 열기'를 누르거나, 링크를 복사해서 크롬·사파리 주소창에 붙여넣어 주세요."
+    : "가게 근처인지 확인하려고 위치가 필요해요. 거리 확인에만 쓰고 저장하지 않아요.\n\n주소창 옆 설정(자물쇠)에서 위치를 허용한 뒤 다시 눌러 주세요.\n아이폰은 설정 → 개인정보 보호 및 보안 → 위치 서비스에서 쓰는 브라우저를 켜 주세요.";
+  $("geoLinkBox").hidden = !app;
+  $("geoLink").value = link;
+  const open = /KAKAOTALK/i.test(UA) ? "kakaotalk://web/openExternal?url=" + encodeURIComponent(link)
+    : isAndroid ? "intent://" + path + "#Intent;scheme=" + location.protocol.slice(0, -1) + ";package=com.android.chrome;end" : "";
+  $("geoOpen").hidden = !open;
+  $("geoOpen").textContent = /KAKAOTALK/i.test(UA) ? "다른 브라우저로 열기" : "크롬으로 열기";
+  if (open) $("geoOpen").href = open;
+  const d = $("geoHelp");
+  if (d.showModal) { if (!d.open) d.showModal(); } else d.setAttribute("open", "");
 }
 const fmtDist = m => m < 1000 ? Math.round(m) + "m" : (m / 1000).toFixed(1) + "km";
 const isTooFar = ex => String(ex).includes("too far");
@@ -614,7 +654,7 @@ function render() {
       const stall = STALLS.find(x => x.id === id);
       let pos;
       toast("위치를 확인하고 있어요…");
-      try { pos = await getMyPos(); } catch (ex) { delete lastSent[id]; toast(ex.message); return; }
+      try { pos = await getMyPos(); } catch (ex) { delete lastSent[id]; geoFailed(ex, id); return; }
       const far = distKm(pos, stall) * 1000;
       if (far > REPORT_RADIUS_M) { delete lastSent[id]; toast(`가게 근처(${REPORT_RADIUS_M}m 안)에서만 알려 줄 수 있어요. 지금 약 ${fmtDist(far)} 떨어져 있어요.`); return; }
       try { await sendRemote(id, open, pos); (remoteReports[id] = remoteReports[id] || []).push({ open, at: Date.now() }); }
@@ -1019,7 +1059,7 @@ let suggestPos = null, suggestArea = null;   // 제안할 때 내 위치와 지�
 async function startSuggest(id) {
   const st = STALLS.find(x => x.id === id);
   toast("위치를 확인하고 있어요…");
-  try { suggestPos = await getMyPos(); } catch (ex) { toast(ex.message); return; }
+  try { suggestPos = await getMyPos(); } catch (ex) { geoFailed(ex, id); return; }
   suggestId = id;
   map.setView([suggestPos.lat, suggestPos.lng], 17);
   suggestArea = L.circle([suggestPos.lat, suggestPos.lng], { radius: SUGGEST_RADIUS_M, color: "#2a6df4", weight: 2, fillOpacity: .08, interactive: false }).addTo(map);
@@ -1045,10 +1085,29 @@ async function sendSuggestion(lat, lng) {
   }
 }
 
+$("geoClose").addEventListener("click", () => { const d = $("geoHelp"); if (d.close) d.close(); else d.removeAttribute("open"); });
+$("geoCopy").addEventListener("click", async () => {
+  const b = $("geoCopy"), input = $("geoLink");
+  try { await navigator.clipboard.writeText(input.value); b.textContent = "복사했어요"; }
+  catch { input.focus(); input.select(); b.textContent = "위 링크를 길게 눌러 복사해 주세요"; }
+  setTimeout(() => { b.textContent = "링크 복사"; }, 3000);
+});
+// ?stall=번호 로 들어오면 그 가게를 펼쳐서 보여줘요
+function openLinkedStall() {
+  const id = +new URLSearchParams(location.search).get("stall");
+  if (!id) return;
+  history.replaceState(null, "", location.pathname + location.hash);
+  const st = STALLS.find(x => x.id === id);
+  if (!st || st.flagCount >= HIDE_FLAGS) { toast("그 가게를 찾지 못했어요."); return; }
+  activeId = null;
+  select(id, true);
+  document.querySelector(`.card[data-id="${id}"]`)?.scrollIntoView({ block: "start" });
+}
+
 const lastSent = {};
 renderCats();
 render();
-Promise.all([loadPublic().then(render), fetchRemote().then(render), loadClaims()]).then(() => { loading = false; render(); });
+Promise.all([loadPublic().then(render), fetchRemote().then(render), loadClaims()]).then(() => { loading = false; render(); openLinkedStall(); });
 // 2분마다 새로 받아요. 탭이 안 보일 땐 받지 않고, 다시 보이면 바로 받아요 (Supabase 사용량 아끼기)
 const REFRESH_MS = 2 * 60 * 1000;
 let lastFetch = Date.now();
