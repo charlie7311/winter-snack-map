@@ -36,7 +36,7 @@ language plpgsql security definer set search_path = public as $$
 begin
   -- 연락처와 메모는 개인정보라 디스코드로 보내지 않아요
   perform private.notify(format(E'🧑‍🍳 사장님 신청: %s (가게 번호 %s)\n연락처 확인과 승인: Supabase Table Editor > owner_claims',
-    (select name from stalls where id = new.stall_id), new.stall_id));
+    (select private.plain(name) from stalls where id = new.stall_id), new.stall_id));
   return new;
 end $$;
 drop trigger if exists owner_claim_notify on public.owner_claims;
@@ -48,7 +48,7 @@ create or replace function private.on_stall_hidden() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
   perform private.notify(format(E'🚩 신고가 쌓여 지도에서 숨겨졌어요: %s (가게 번호 %s)\n확인: Table Editor > stall_flags\n되살리려면 stalls 에서 flag_count를 0으로',
-    new.name, new.id));
+    private.plain(new.name), new.id));
   return new;
 end $$;
 drop trigger if exists stall_hidden_notify on public.stalls;

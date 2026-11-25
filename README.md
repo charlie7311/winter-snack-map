@@ -28,6 +28,7 @@
 - `moderation.sql` — 신고·자동 숨김, 손님이 등록할 때 보낼 수 있는 칸 제한. `categories.sql` 다음에 실행
 - `notify.sql` — 디스코드 알림. `owners.sql`, `moderation.sql` 다음에 실행
 - `suggestions.sql` — 손님 위치 수정 제안과 승인. `notify.sql` 다음에 실행
+- `review.sql`, `review.html` — 디스코드 알림의 승인 링크(새 가게, 위치 제안). `suggestions.sql` 다음에 실행. 링크가 있으면 누구나 승인할 수 있으니 알림 채널은 비공개로
 - `public-stalls.sql` — 공개자료 가게를 stalls 테이블에도 넣어 사장님 신청이 되게 함. `owners.sql`, `categories.sql` 다음에 실행. `data/public-stalls.json`을 바꾸면 `node data/make-public-sql.js`로 다시 만들고 다시 실행
 - `data/public-stalls.json` — 구청 공개자료에서 고른 노점 (id 500~)
 
@@ -41,11 +42,11 @@ GitHub Pages (Settings → Pages → Branch: `main`, 폴더 `/`).
 
 ## 처음 설치 순서 (Supabase SQL Editor, 파일마다 New query로)
 
-`supabase.sql` → `stalls.sql` → `categories.sql` → `security.sql` → `owners.sql` → `moderation.sql` → `notify.sql` → `suggestions.sql` → `public-stalls.sql`
+`supabase.sql` → `stalls.sql` → `categories.sql` → `security.sql` → `owners.sql` → `moderation.sql` → `notify.sql` → `suggestions.sql` → `review.sql` → `public-stalls.sql`
 
 ## 새 가게 승인
 
-손님이 등록한 가게는 `approved = false`로 들어오고 디스코드로 알림이 와요. Table Editor > `stalls`에서 확인하고 `approved`를 체크하면 지도에 올라가요. 장난 등록은 그 줄을 지우면 돼요.
+손님이 등록한 가게는 `approved = false`로 들어오고 디스코드로 알림이 와요. 알림의 링크를 열어 승인하거나 지울 수 있어요(한 번만, 7일 안). 또는 Table Editor > `stalls`에서 확인하고 `approved`를 체크하면 지도에 올라가요. 장난 등록은 그 줄을 지우면 돼요.
 
 ## 사장님 승인
 
@@ -59,7 +60,7 @@ update owner_claims set contact = '확인 완료', note = null where approved;
 
 ## 위치 수정 제안 승인
 
-Table Editor > `location_suggestions`에서 `approved`를 체크하면 그 가게 위치가 바로 바뀌어요. 디스코드 알림에 지금 위치와 제안 위치 지도 링크, 거리 차이가 같이 와요. 승인하지 않을 제안은 그냥 두거나 지우면 돼요.
+Table Editor > `location_suggestions`에서 `approved`를 체크하면 그 가게 위치가 바로 바뀌어요. 디스코드 알림의 링크를 열면 지금 위치와 제안 위치를 지도에서 비교하고 바로 승인하거나 지울 수 있어요. 손님이 그 뒤에 자리를 바꾸면 새 알림의 링크를 써야 해요. 승인하지 않을 제안은 그냥 두거나 지우면 돼요.
 
 ## 신고로 숨겨진 가게
 
@@ -70,6 +71,10 @@ Table Editor > `location_suggestions`에서 `approved`를 체크하면 그 가�
 ## 지도 그림
 
 지금은 OpenStreetMap 공식 지도 서버를 써요. 이 서버는 사용량이 많은 서비스엔 쓰지 말라는 정책이 있어서, 사람이 많이 몰리면 키를 받는 지도(Stadia Maps, MapTiler, VWorld 등)로 `index.html`의 `L.tileLayer` 줄을 바꿔야 해요.
+
+## 사이트 주소가 바뀌면
+
+승인 링크 주소도 바꿔야 해요: `update private.settings set value = 'https://새주소/' where key = 'site_url';`
 
 ## 디스코드 알림 켜기
 

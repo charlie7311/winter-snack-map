@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>승인하기</title>
+<!-- 이 화면 주소에는 승인 키가 있어서, 밖에서 받는 코드가 바뀌지 않았는지 integrity로 확인해요 -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" crossorigin="anonymous" integrity="sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw==">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" crossorigin="anonymous" integrity="sha512-puJW3E/qXDqYp9IfhAI54BJEaWIfloJ7JWs7OeD5i6ruC9JZL1gERT1wjtwXFlh7CjE7ZJ+/vcRZRkIYIb6p4g=="></script>
+<style>
+  :root { --bg: #fbf7f1; --panel: #fff; --text: #2b2118; --muted: #7a6a5b; --line: #eadfce; --open: #1f8a4c; --shut: #c0392b; --focus: #2a6df4; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1b1612; --panel: #241d17; --text: #f2e8dc; --muted: #b0a08e; --line: #3a2f25; --open: #2f9e62; --shut: #d05545; --focus: #7ea6ff; color-scheme: dark; } }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 560px; padding: 16px; background: var(--bg); color: var(--text); font-family: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; font-size: 16px; line-height: 1.5; }
+  h1 { font-size: 22px; margin: 4px 0 12px; overflow-wrap: anywhere; }
+  #kind, dt { color: var(--muted); font-size: 14px; }
+  dl { margin: 12px 0; display: grid; grid-template-columns: 5em 1fr; gap: 6px 10px; } dd { margin: 0; overflow-wrap: anywhere; }
+  #map { height: 38vh; min-height: 220px; border: 1px solid var(--line); border-radius: 12px; position: relative; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+  button { font: inherit; font-size: 20px; font-weight: 700; padding: 18px 10px; border-radius: 14px; border: 2px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+  button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  button:disabled { opacity: .5; }
+  #yes { background: var(--open); border-color: var(--open); color: #fff; } #no.sure { background: var(--shut); border-color: var(--shut); color: #fff; }
+  #msg { margin-top: 14px; min-height: 1.5em; }
+</style>
+</head>
+<body>
+<div id="kind"></div>
+<h1 id="name">불러오는 중…</h1>
+<div id="item" hidden>
+  <div id="map"></div>
+  <dl id="info"></dl>
+  <div class="row"><button id="no">삭제</button><button id="yes">승인</button></div>
+</div>
+<div id="msg" role="status"></div>
+<p><a href="./">지도로 가기</a></p>
+<script>
+// index.html과 같은 Supabase (공개돼도 되는 publishable 키)
+const API = "https://qzisdwtstsicpjqvynyf.supabase.co/rest/v1/rpc/", KEY = "sb_publishable_cJEqZcwTtoUDYUz4w-HUFg_Xb0YGxEM";
+const $ = id => document.getElementById(id), token = location.hash.slice(1);
+async function rpc(name, args) {
+  const r = await fetch(API + name, { method: "POST", headers: { apikey: KEY, "Content-Type": "application/json" }, body: JSON.stringify(args) });
+  const t = await r.text();
+  if (!r.ok) throw new Error(t);
+  return t ? JSON.parse(t) : null;
+}
+const why = ex => { const s = String(ex);
+  return s.includes("already handled") ? "이미 처리했거나 지워진 항목이에요."
+    : s.includes("changed") ? "손님이 그 뒤에 자리를 바꿨어요. 가장 최근 알림의 링크를 열어 주세요."
+    : s.includes("invalid link") ? "링크가 잘못됐거나 7일이 지났어요. Supabase Table Editor에서 처리해 주세요."
+    : "연결하지 못했어요. 잠시 뒤 다시 열어 주세요."; };
+function info(label, value) {           // 손님이 쓴 글자라 textContent로만 넣어요
+  if (!value) return;
+  const dt = document.createElement("dt"), dd = document.createElement("dd");
+  dt.textContent = label; dd.textContent = value; $("info").append(dt, dd);
+}
+const DAYS = ["일", "월", "화", "수", "목", "금", "토"];
+let stall = true;
+async function load() {
+  let d;
+  try { if (!/^[0-9a-f]{64}$/.test(token)) throw new Error("invalid link"); d = await rpc("review_item", { p_token: token }); }
+  catch (ex) { $("name").textContent = "열 수 없어요"; $("msg").textContent = why(ex); return; }
+  stall = d.kind === "stall";
+  $("kind").textContent = stall ? "새 가게 등록" : "위치 수정 제안";
+  $("name").textContent = d.name;
+  info("동네", d.area);
+  if (stall) {
+    info("품목", d.types.map(t => t === "기타" && d.other_food ? "기타 (" + d.other_food + ")" : t).join(", "));
+    info("메뉴·가격", d.menu); info("결제", d.pay);
+    info("영업시간", d.hours ? [1,2,3,4,5,6,0].map(i => DAYS[i] + " " + (d.hours[i] ? d.hours[i].join("–") : "휴무")).join(", ") : "모름");
+  } else info("이동", "약 " + d.meters + "m (회색: 지금, 파란색: 제안)");
+  $("item").hidden = false;
+  const map = L.map("map"), dot = (lat, lng, color) => L.circleMarker([lat, lng], { radius: 9, color: "#fff", weight: 2, fillColor: color, fillOpacity: 1 }).addTo(map);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap contributors" }).addTo(map);
+  if (!stall) dot(d.old_lat, d.old_lng, "#7d7166");
+  dot(d.lat, d.lng, "#2a6df4");
+  if (stall) map.setView([d.lat, d.lng], 17); else map.fitBounds([[d.lat, d.lng], [d.old_lat, d.old_lng]], { padding: [40, 40], maxZoom: 18 });
+}
+async function decide(approve) {
+  $("yes").disabled = $("no").disabled = true;
+  $("msg").textContent = "처리하는 중…";
+  try {
+    await rpc("review_decide", { p_token: token, p_approve: approve });
+    $("item").hidden = true;
+    $("msg").textContent = approve ? (stall ? "✅ 승인했어요. 지도에 올라갔어요." : "✅ 승인했어요. 가게 위치를 옮겼어요.") : "🗑️ 지웠어요.";
+  } catch (ex) {
+    $("msg").textContent = why(ex);
+    $("yes").disabled = $("no").disabled = false;
+  }
+}
+$("yes").addEventListener("click", () => decide(true));
+$("no").addEventListener("click", () => {
+  if ($("no").classList.contains("sure")) return decide(false);
+  $("no").classList.add("sure"); $("no").textContent = "정말 삭제";
+  $("msg").textContent = "한 번 더 누르면 지워지고 되돌릴 수 없어요.";
+});
+addEventListener("hashchange", () => location.reload());   // 열린 탭에 다른 링크를 붙여 넣었을 때
+load();
+</script>
+</body>
+</html>

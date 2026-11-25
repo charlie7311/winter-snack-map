@@ -85,7 +85,36 @@ begin
   end if;
 end $$;
 
+-- 알림에 넣는 손님 글자: 가짜 링크나 줄바꿈으로 알림을 꾸미지 못하게 기호를 빼요
+create or replace function private.plain(p text) returns text
+language sql immutable as $$ select regexp_replace(coalesce(p, ''), '[][()<>{}*_~|`\\@#:/.[:cntrl:]]+', ' ', 'g') $$;
+
 drop function if exists public.rate_limit_source();   -- 점검용이었고 이제 안 써요
+
+-- 디스코드 알림의 승인 링크 (여는 쪽은 review.sql, review.html)
+insert into private.settings (key, value) values ('site_url', 'https://charlie7311.github.io/winter-snack-map/') on conflict (key) do nothing;
+
+-- 링크의 키는 sha256만 저장. lat/lng는 알림에 나온 자리 (제안이 그 뒤에 바뀌면 이 링크로는 승인 안 됨)
+create table if not exists private.review_links (
+  token_hash text primary key,
+  kind       text not null check (kind in ('stall', 'location')),
+  ref_id     bigint not null,
+  lat        double precision not null,
+  lng        double precision not null,
+  created_at timestamptz not null default now(),
+  used_at    timestamptz
+);
+alter table private.review_links enable row level security;
+
+-- 새 링크 만들기 (알림 함수에서만 부름). <>로 감싸면 디스코드가 미리보기를 안 만들어요.
+create or replace function private.review_link(p_kind text, p_id bigint, p_lat double precision, p_lng double precision) returns text
+language plpgsql security definer set search_path = public, private as $$
+declare t text := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
+begin
+  delete from private.review_links where created_at < now() - interval '7 days';
+  insert into private.review_links (token_hash, kind, ref_id, lat, lng) values (_token_hash(t), p_kind, p_id, p_lat, p_lng);
+  return '<' || (select value from private.settings where key = 'site_url') || 'review.html#' || t || '>';
+end $$;
 
 -- 3) 새 가게는 승인(approved) 후에 지도에 보여요. 지금까지 있던 가게는 모두 승인된 걸로.
 alter table public.stalls add column if not exists approved boolean not null default true;
@@ -109,9 +138,9 @@ begin
           nullif(p->'hours', 'null'::jsonb), nullif(trim(p->>'other_food'), ''), false)
   returning id into v_id;
   begin
-    perform private.notify(format(E'🆕 새 가게 등록 (승인 대기): %s · %s (가게 번호 %s)\n위치: https://www.openstreetmap.org/?mlat=%s&mlon=%s#map=19/%s/%s\n승인: Table Editor > stalls 에서 approved 체크, 이상하면 줄 삭제',
-      trim(p->>'name'), (select array_to_string(types, ', ') from stalls where id = v_id), v_id,
-      p->>'lat', p->>'lng', p->>'lat', p->>'lng'));
+    perform private.notify(format(E'🆕 새 가게 등록 (승인 대기): %s · %s (가게 번호 %s)\n확인하고 승인·삭제: %s',
+      private.plain(p->>'name'), (select array_to_string(types, ', ') from stalls where id = v_id), v_id,
+      (select private.review_link('stall', id, lat, lng) from stalls where id = v_id)));   
   exception when others then null;   -- 알림이 안 돼도 등록은 저장
   end;
   return v_id;

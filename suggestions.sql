@@ -2,7 +2,7 @@
 -- Supabase SQL Editor에 통째로 붙여넣고 Run. security.sql, moderation.sql, notify.sql 다음에 실행. 여러 번 실행해도 괜찮아요.
 --
 -- 승인하는 법: Table Editor > location_suggestions 에서 approved를 체크(true)하면 그 가게 위치가 바로 바뀌어요.
--- 디스코드 알림에 지금 위치·제안 위치 지도 링크가 같이 와요. 승인하지 않을 제안은 그냥 두거나 지우면 돼요.
+-- 디스코드 알림의 링크에서도 승인하거나 지울 수 있어요 (review.sql). 승인하지 않을 제안은 그냥 두거나 지우면 돼요.
 
 create table if not exists public.location_suggestions (
   id             bigint generated always as identity primary key,
@@ -65,8 +65,8 @@ begin
   meters := round(111320 * sqrt(power(new.lat - s.lat, 2) + power((new.lng - s.lng) * cos(radians(s.lat)), 2)));
   begin
     perform private.notify(format(
-      E'📍 위치 수정 제안: %s (가게 번호 %s), 약 %sm 이동\n지금: https://www.openstreetmap.org/?mlat=%s&mlon=%s#map=19/%s/%s\n제안: https://www.openstreetmap.org/?mlat=%s&mlon=%s#map=19/%s/%s\n승인: Table Editor > location_suggestions 에서 approved 체크',
-      s.name, new.stall_id, meters, s.lat, s.lng, s.lat, s.lng, new.lat, new.lng, new.lat, new.lng));
+      E'📍 위치 수정 제안: %s (가게 번호 %s), 약 %sm 이동\n확인하고 승인·삭제: %s',
+      private.plain(s.name), new.stall_id, meters, private.review_link('location', new.id, new.lat, new.lng)));
   exception when others then null;
   end;
   return new;
