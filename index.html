@@ -233,7 +233,7 @@
   <h2 id="geoTitle"></h2>
   <p id="geoText"></p>
   <div id="geoLinkBox">
-    <input id="geoLink" type="text" readonly aria-label="이 가게 링크">
+    <input id="geoLink" type="text" readonly aria-label="다른 브라우저에서 열 링크">
     <a class="big save" id="geoOpen" hidden>크롬으로 열기</a>
     <button class="big" id="geoCopy">링크 복사</button>
   </div>
@@ -442,14 +442,14 @@ async function getMyPos() {
 const UA = navigator.userAgent, isAndroid = /Android/.test(UA);
 const inApp = /; wv\)|KAKAOTALK|everytime|Instagram|FBA[NV]|NAVER\(|Line\/|DaumApps/i.test(UA) || (/iPhone|iPad/.test(UA) && !/Safari\//.test(UA));
 // 위치를 못 받았을 때: 앱 안이면 다른 브라우저로, 권한 거부면 켜는 법, 그 밖엔 폰 위치를 켜는 법
-function geoFailed(ex, stallId) {
+function geoFailed(ex, stallId, why = "가게 근처인지 확인하려고 위치가 필요해요. 거리 확인에만 쓰고 저장하지 않아요.") {
   $("toast").classList.remove("show");
-  const app = ex.blocked === "app", path = location.host + location.pathname + "?stall=" + stallId, link = location.protocol + "//" + path;
+  const app = ex.blocked === "app", path = location.host + location.pathname + (stallId ? "?stall=" + stallId : ""), link = location.protocol + "//" + path;
   $("geoTitle").textContent = app ? "크롬이나 사파리에서 열어 주세요" : ex.blocked === "denied" ? "위치 권한을 켜 주세요" : "위치를 찾지 못했어요";
   $("geoText").textContent = app
-    ? "이 앱 안에서는 위치를 확인할 수 없어서 알려 줄 수 없어요. 아래 링크로 열면 보던 가게가 바로 나와요.\n\n오른쪽 위 메뉴에서 '다른 브라우저로 열기'를 누르거나, 링크를 복사해서 크롬·사파리 주소창에 붙여넣어 주세요."
+    ? "이 앱 안에서는 위치를 확인할 수 없어요. 아래 링크로 열면 " + (stallId ? "보던 가게가" : "지도가") + " 바로 나와요.\n\n오른쪽 위 메뉴에서 '다른 브라우저로 열기'를 누르거나, 링크를 복사해서 크롬·사파리 주소창에 붙여넣어 주세요."
     : ex.blocked === "off" ? "휴대폰의 위치(GPS)가 켜져 있는지 확인하고 다시 눌러 주세요.\n\n켜져 있다면 건물 밖이나 창가에서 해 보거나, 와이파이를 켜면 더 잘 잡혀요. 컴퓨터에서는 위치를 못 찾는 경우가 많아요."
-    : "가게 근처인지 확인하려고 위치가 필요해요. 거리 확인에만 쓰고 저장하지 않아요.\n\n주소창 옆 설정(자물쇠)에서 위치를 허용한 뒤 다시 눌러 주세요.\n아이폰은 설정 → 개인정보 보호 및 보안 → 위치 서비스에서 쓰는 브라우저를 켜 주세요.";
+    : why + "\n\n주소창 옆 설정(자물쇠)에서 위치를 허용한 뒤 다시 눌러 주세요.\n아이폰은 설정 → 개인정보 보호 및 보안 → 위치 서비스에서 쓰는 브라우저를 켜 주세요.";
   $("geoLinkBox").hidden = !app;
   $("geoLink").value = link;
   const open = /KAKAOTALK/i.test(UA) ? "kakaotalk://web/openExternal?url=" + encodeURIComponent(link)
@@ -695,17 +695,19 @@ document.getElementById("openOnly").addEventListener("click", e => {
   openOnly = !openOnly; e.currentTarget.setAttribute("aria-pressed", openOnly); render();
 });
 document.getElementById("q").addEventListener("input", e => { query = e.target.value.trim(); render(); });
-document.getElementById("locate").addEventListener("click", e => {
+document.getElementById("locate").addEventListener("click", async e => {
   const btn = e.currentTarget;
   if (userPos) { userPos = null; btn.setAttribute("aria-pressed", false); render(); return; }
-  if (!navigator.geolocation) { btn.textContent = "📍 위치 기능 없음"; return; }
-  navigator.geolocation.getCurrentPosition(p => {
-    userPos = { lat: p.coords.latitude, lng: p.coords.longitude };
-    btn.setAttribute("aria-pressed", true);
-    L.circleMarker([userPos.lat, userPos.lng], { radius: 7, color: "#2a6df4", fillOpacity: .9 }).addTo(map);
-    map.setView([userPos.lat, userPos.lng], 14);
-    render();
-  }, () => btn.textContent = "📍 위치 권한 필요");
+  toast("위치를 확인하고 있어요…", 20000);
+  btn.disabled = true;
+  try { userPos = await getMyPos(); }
+  catch (ex) { geoFailed(ex, null, "가까운 가게를 찾으려면 위치가 필요해요. 이 브라우저 안에서만 쓰고 보내지 않아요."); return; }
+  finally { btn.disabled = false; }
+  $("toast").classList.remove("show");
+  btn.setAttribute("aria-pressed", true);
+  L.circleMarker([userPos.lat, userPos.lng], { radius: 7, color: "#2a6df4", fillOpacity: .9 }).addTo(map);
+  map.setView([userPos.lat, userPos.lng], 14);
+  render();
 });
 
 
@@ -752,10 +754,14 @@ $("addStall").addEventListener("click", () => { buildTypes(); $("otherBox").hidd
 $("pickCancel").addEventListener("click", cancelPick);
 $("fCancel").addEventListener("click", closeForm);
 $("fRepick").addEventListener("click", startPick);
-$("pickMine").addEventListener("click", () => {
-  if (!navigator.geolocation) { toast("이 브라우저는 위치 기능이 없어요. 지도를 눌러 주세요."); return; }
-  navigator.geolocation.getCurrentPosition(p => { map.setView([p.coords.latitude, p.coords.longitude], 17); onPick(p.coords.latitude, p.coords.longitude); },
-    () => toast("위치 권한이 없어요. 지도를 눌러 주세요."));
+$("pickMine").addEventListener("click", async () => {
+  toast("위치를 확인하고 있어요…", 20000);
+  let pos;
+  try { pos = await getMyPos(); }
+  catch (ex) { geoFailed(ex, relocateId || suggestId, "지금 계신 곳을 가게 자리로 쓰려면 위치가 필요해요. 지도를 직접 눌러서 골라도 돼요."); return; }
+  $("toast").classList.remove("show");
+  if (!picking) return;   // 찾는 동안 취소했으면 그만
+  map.setView([pos.lat, pos.lng], 17); onPick(pos.lat, pos.lng);
 });
 // 지도에서 자리 찍기는 세 가지로 씀: 새 가게 등록 / 사장님 위치 고치기 / 손님 위치 수정 제안
 const onPick = (lat, lng) => relocateId ? saveLocation(lat, lng) : suggestId ? sendSuggestion(lat, lng) : setPicked(lat, lng);
