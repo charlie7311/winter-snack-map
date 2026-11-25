@@ -71,6 +71,10 @@
   }
   .card { padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
   .card:hover, .card.active { background: var(--chip); }
+  /* 폰 크롬은 버튼을 눌러도 카드 전체를 파랗게 표시해서, 카드 표시는 끄고 누른 버튼만 표시 */
+  .card { -webkit-tap-highlight-color: transparent; }
+  .card :is(button, summary, a) { -webkit-tap-highlight-color: rgba(42, 109, 244, .2); }
+  .card :is(button, summary):active { background: color-mix(in srgb, var(--report) 20%, transparent); }
   .card .top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
   .card h3 { margin: 0; font-size: 16px; }
   .badge { font-size: 14px; font-weight: 700; white-space: nowrap; }
