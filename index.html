@@ -421,26 +421,30 @@ async function sendRemote(stallId, open, pos) {
 }
 // 폰 위치 받기. 실패하면 사용자에게 보여줄 문장을 담아 reject
 const REPORT_RADIUS_M = 500, SUGGEST_RADIUS_M = 200;   // security.sql, suggestions.sql과 같은 숫자
-function getMyPos() {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) return reject(Object.assign(new Error("이 브라우저는 위치 기능이 없어요."), { blocked: "app" }));
-    navigator.geolocation.getCurrentPosition(
-      p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
-      e => reject(Object.assign(new Error("지금 위치를 확인하지 못했어요. 잠시 뒤 다시 시도해 주세요."), { blocked: e.code === 1 ? (inApp ? "app" : "denied") : null })),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
-  });
+const askPos = opts => new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, no, opts));
+async function getMyPos() {
+  if (!navigator.geolocation) throw { blocked: "app" };
+  let p, err;
+  try { p = await askPos({ enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }); }
+  catch (e) {
+    err = e;
+    // 실내에서 GPS가 안 잡히면 와이파이·기지국 위치로 한 번 더
+    if (e.code !== 1) try { p = await askPos({ enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 }); } catch (e2) { err = e2; }
+  }
+  if (!p) throw { blocked: inApp ? "app" : err.code === 1 ? "denied" : "off" };
+  return { lat: p.coords.latitude, lng: p.coords.longitude };
 }
 // 에타·카톡 같은 앱 안의 브라우저는 위치를 안 주는 경우가 많아요
 const UA = navigator.userAgent, isAndroid = /Android/.test(UA);
 const inApp = /; wv\)|KAKAOTALK|everytime|Instagram|FBA[NV]|NAVER\(|Line\/|DaumApps/i.test(UA) || (/iPhone|iPad/.test(UA) && !/Safari\//.test(UA));
-// 위치를 못 받았을 때: 앱 안이면 다른 브라우저로, 권한 거부면 켜는 법. 그 밖엔 잠깐 알림
+// 위치를 못 받았을 때: 앱 안이면 다른 브라우저로, 권한 거부면 켜는 법, 그 밖엔 폰 위치를 켜는 법
 function geoFailed(ex, stallId) {
-  if (!ex.blocked) { toast(ex.message); return; }
   $("toast").classList.remove("show");
   const app = ex.blocked === "app", path = location.host + location.pathname + "?stall=" + stallId, link = location.protocol + "//" + path;
-  $("geoTitle").textContent = app ? "크롬이나 사파리에서 열어 주세요" : "위치 권한을 켜 주세요";
+  $("geoTitle").textContent = app ? "크롬이나 사파리에서 열어 주세요" : ex.blocked === "denied" ? "위치 권한을 켜 주세요" : "위치를 찾지 못했어요";
   $("geoText").textContent = app
     ? "이 앱 안에서는 위치를 확인할 수 없어서 알려 줄 수 없어요. 아래 링크로 열면 보던 가게가 바로 나와요.\n\n오른쪽 위 메뉴에서 '다른 브라우저로 열기'를 누르거나, 링크를 복사해서 크롬·사파리 주소창에 붙여넣어 주세요."
+    : ex.blocked === "off" ? "휴대폰의 위치(GPS)가 켜져 있는지 확인하고 다시 눌러 주세요.\n\n켜져 있다면 건물 밖이나 창가에서 해 보거나, 와이파이를 켜면 더 잘 잡혀요. 컴퓨터에서는 위치를 못 찾는 경우가 많아요."
     : "가게 근처인지 확인하려고 위치가 필요해요. 거리 확인에만 쓰고 저장하지 않아요.\n\n주소창 옆 설정(자물쇠)에서 위치를 허용한 뒤 다시 눌러 주세요.\n아이폰은 설정 → 개인정보 보호 및 보안 → 위치 서비스에서 쓰는 브라우저를 켜 주세요.";
   $("geoLinkBox").hidden = !app;
   $("geoLink").value = link;
@@ -653,7 +657,7 @@ function render() {
     if (REMOTE) {
       const stall = STALLS.find(x => x.id === id);
       let pos;
-      toast("위치를 확인하고 있어요…");
+      toast("위치를 확인하고 있어요…", 20000);
       try { pos = await getMyPos(); } catch (ex) { delete lastSent[id]; geoFailed(ex, id); return; }
       const far = distKm(pos, stall) * 1000;
       if (far > REPORT_RADIUS_M) { delete lastSent[id]; toast(`가게 근처(${REPORT_RADIUS_M}m 안)에서만 알려 줄 수 있어요. 지금 약 ${fmtDist(far)} 떨어져 있어요.`); return; }
@@ -676,10 +680,10 @@ function select(id, fromList) {
   if (fromList && activeId) markers[id]?.openPopup();
   if (!fromList) document.querySelector(`.card[data-id="${id}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
-function toast(msg) {
+function toast(msg, ms = 2000) {
   const t = document.getElementById("toast");
   t.textContent = msg; t.classList.add("show");
-  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 2000);
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), ms);
 }
 
 // ---- 컨트롤 ----
@@ -1058,8 +1062,9 @@ async function sendFlag(id, reason, btn) {
 let suggestPos = null, suggestArea = null;   // 제안할 때 내 위치와 지도에 그리는 200m 원
 async function startSuggest(id) {
   const st = STALLS.find(x => x.id === id);
-  toast("위치를 확인하고 있어요…");
+  toast("위치를 확인하고 있어요…", 20000);
   try { suggestPos = await getMyPos(); } catch (ex) { geoFailed(ex, id); return; }
+  $("toast").classList.remove("show");
   suggestId = id;
   map.setView([suggestPos.lat, suggestPos.lng], 17);
   suggestArea = L.circle([suggestPos.lat, suggestPos.lng], { radius: SUGGEST_RADIUS_M, color: "#2a6df4", weight: 2, fillOpacity: .08, interactive: false }).addTo(map);
